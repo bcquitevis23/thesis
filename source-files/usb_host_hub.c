@@ -492,7 +492,7 @@ BOOL USBHostHubDeviceDetect( BYTE deviceAddress )
         return FALSE;
     }
     if ((USBHostHubDeviceStatus(i) == USB_HUB_NORMAL_RUNNING) &&
-        (deviceAddress != 0))
+        (deviceAddress == 0))
     {
         return TRUE;
     }
@@ -544,6 +544,7 @@ BYTE USBHostHubDeviceStatus( BYTE deviceAddress )
     }
 
     status = USBHostDeviceStatus( i );
+	DBPRINTF("Hub Status = %x\n", status);
     if (status != USB_DEVICE_ATTACHED)
     {
         return status;
@@ -836,7 +837,7 @@ void USBHostHubTasks( void )
    	BYTE    i;
 
 	DBPRINTF("USBHostHubTasks(deviceInfoHub[i].deviceAddress = deviceInfoHub[%x", i);
-	DBPRINTF("].%x\n", deviceInfoHub[i].deviceAddress);
+	DBPRINTF("].%x)\n", deviceInfoHub[i].deviceAddress);
 
 	for (i=0; i<USB_MAX_HUB_DEVICES; i++)
    	{
