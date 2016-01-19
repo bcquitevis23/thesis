@@ -31,8 +31,8 @@ USB_INTERRUPT_T1MSECIF equals 0x40.
 Software License Agreement
 
 The software supplied herewith by Microchip Technology Incorporated
-(the Company) for its PICmicro® Microcontroller is intended and
-supplied to you, the Companys customer, for use solely and
+(the “Company”) for its PICmicro® Microcontroller is intended and
+supplied to you, the Company’s customer, for use solely and
 exclusively on Microchip PICmicro Microcontroller products. The
 software is owned by the Company and/or its supplier, and is
 protected under applicable copyright laws. All rights are reserved.
@@ -41,7 +41,7 @@ user to criminal sanctions under applicable laws, as well as to
 civil liability for the breach of the terms and conditions of this
 license.
 
-THIS SOFTWARE IS PROVIDED IN AN AS IS CONDITION. NO WARRANTIES,
+THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
 WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
 TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
 PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
@@ -371,7 +371,7 @@ BYTE USBHostDeviceStatus( BYTE deviceAddress )
 	DBPRINTF(", state = %x\n",portdeviceInfo[deviceAddress].state);
     if ((portdeviceInfo[deviceAddress].state & STATE_MASK) == STATE_DETACHED)
     {
-		DBPRINTF("Device Status = USB_DEVICE_DETACHED");
+		DBPRINTF("Device Status = USB_DEVICE_DETACHED\n");
         return USB_DEVICE_DETACHED;
     }
 
@@ -379,12 +379,12 @@ BYTE USBHostDeviceStatus( BYTE deviceAddress )
     {
         if ((portdeviceInfo[deviceAddress].state & SUBSTATE_MASK) == SUBSTATE_SUSPEND_AND_RESUME)
         {
-			DBPRINTF("Device Status = USB_DEVICE_SUSPENDED");
+			DBPRINTF("Device Status = USB_DEVICE_SUSPENDED\n");
             return USB_DEVICE_SUSPENDED;
         }
         else
         {
-			DBPRINTF("Device Status = USB_DEVICE_ATTACHED");
+			DBPRINTF("Device Status = USB_DEVICE_ATTACHED\n");
 			return USB_DEVICE_ATTACHED;
         }
     }
@@ -393,7 +393,7 @@ BYTE USBHostDeviceStatus( BYTE deviceAddress )
     {
         return portdeviceInfo[deviceAddress].usbDeviceInfo.errorCode;
     }
-	DBPRINTF("Device Status = USB_DEVICE_ENUMERATING");
+	DBPRINTF("Device Status = USB_DEVICE_ENUMERATING\n");
     return USB_DEVICE_ENUMERATING;
 }
 
@@ -1184,6 +1184,8 @@ void USBHostShutdown( void )
     // Shut off the power to the module first, in case we are in an
     // overcurrent situation.
 
+	DBPRINTF("USBHostShutdown()\n");
+
     #ifdef  USB_SUPPORT_OTG
         if (!USBOTGHnpIsActive())
         {
@@ -1331,7 +1333,7 @@ void USBHostTasks( BYTE DeviceNumber )
 //        UART2PutHex( pCurrentEndpoint->transferState );
 //        UART2PutChar('>');
     #endif
-//	DBPRINTF("\nUSBHostTasks Start\n");
+	DBPRINTF("\nUSBHostTasks Start\n");
 
     // The PIC32MX detach interrupt is not reliable.  If we are not in one of
     // the detached states, we'll do a check here to see if we've detached.
@@ -1399,8 +1401,8 @@ void USBHostTasks( BYTE DeviceNumber )
 
     //-------------------------------------------------------------------------
     // Main State Machine
-	DBPRINTF("Device is %x\n",DeviceNumber);
- 	DBPRINTF("\nstate %x\n",portdeviceInfo[DeviceNumber].state);
+	DBPRINTF("Device number is %x,",DeviceNumber);
+ 	DBPRINTF("\tstate %x\n",portdeviceInfo[DeviceNumber].state);
     switch (portdeviceInfo[DeviceNumber].state & STATE_MASK)
     {
         case STATE_DETACHED:
@@ -1415,7 +1417,7 @@ void USBHostTasks( BYTE DeviceNumber )
 	                    USBHostShutdown();
 
                     #ifdef DEBUG_MODE
-                        UART2PrintString( "HOST: Initializing DETACHED state.\r\n" );
+                        DBPRINTF( "HOST: Initializing DETACHED state.\r\n" );
                     #endif
                     // Initialize Endpoint 0 attributes.
                     usbDeviceInfo.pEndpoint0->next                         = NULL;
@@ -1572,7 +1574,7 @@ void USBHostTasks( BYTE DeviceNumber )
                     {
                         case SUBSUBSTATE_START_SETTLING_DELAY:
                             #ifdef DEBUG_MODE
-                                UART2PrintString( "HOST: Starting settling delay.\r\n" );
+                                DBPRINTF( "HOST: Starting settling delay.\r\n" );
                             #endif
 
                             // Clear and turn on the DETACH interrupt.
@@ -1587,7 +1589,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             break;
 
                         case SUBSUBSTATE_WAIT_FOR_SETTLING:
-//							DBPRINTF("Wait for Settling");
+ 							DBPRINTF("Wait for Settling\n");
                             // Wait for the timer to finish in the background.
                             break;
 
@@ -1615,7 +1617,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             if ((pEP0Data = (BYTE *)malloc( 8 )) == NULL)
                             {
                                 #ifdef DEBUG_MODE
-                                    UART2PrintString( "HOST: Error alloc-ing pEP0Data\r\n" );
+                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data\r\n" );
                                 #endif
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
@@ -1651,7 +1653,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             if (!U1CONbits.JSTATE)
                             {
                                 #ifdef DEBUG_MODE
-                                    UART2PrintString( "HOST: Low Speed!\r\n" );
+                                    DBPRINTF( "HOST: Low Speed!\r\n" );
                                 #endif
                                 portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfIsLowSpeed    = 1;
                                 portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddressAndSpeed = 0x80;
