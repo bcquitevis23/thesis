@@ -605,60 +605,6 @@ BYTE USBHostHubResetDevice( BYTE deviceAddress )
     return USB_HUB_ILLEGAL_REQUEST;
 }
 
-/*******************************************************************************
-  Function:
-    BYTE USBHubResetDevice( BYTE deviceAddress )
-  Summary:
-    This function starts a Hub reset due to a stalled endpoint.
-  Description:
-    This function starts a Hub reset.  A reset can be
-    issued only if the device is attached and not being initialized.
-  Precondition:
-    None
-  Parameters:
-    BYTE deviceAddress - Device address
-  Return Values:
-    USB_SUCCESS                 - Reset started
-    USB_HUB_DEVICE_NOT_FOUND    - No device with specified address
-    USB_HUB_ILLEGAL_REQUEST     - Device is in an illegal state for reset
-  Remarks:
-    None
-*******************************************************************************/
-BYTE USBHubResetDevice( BYTE deviceAddress )
-{
-    BYTE    i;
-
-    // Find the correct device.
-    for (i=0; (i<USB_MAX_HUB_DEVICES) && (deviceInfoHub[i].deviceAddress != deviceAddress); i++);
-    if (i == USB_MAX_HUB_DEVICES)
-    {
-        return USB_HUB_DEVICE_NOT_FOUND;
-    }
-
-    #ifndef USB_ENABLE_TRANSFER_EVENT
-    if (((deviceInfoHub[i].state & STATE_MASK) != STATE_DETACHED) &&
-        ((deviceInfoHub[i].state & STATE_MASK) != STATE_INITIALIZE_DEVICE))
-    #else
-    if ((deviceInfoHub[i].state != STATE_DETACHED) &&
-        (deviceInfoHub[i].state != STATE_INITIALIZE_DEVICE))
-    #endif
-    {
-        deviceInfoHub[i].flags.val |= MARK_RESET_RECOVERY;
-        deviceInfoHub[i].flags.bfReset = 1;
-        #ifndef USB_ENABLE_TRANSFER_EVENT
-            deviceInfoHub[i].returnState = STATE_DETACHED;
-        #else
-            deviceInfoHub[i].returnState = STATE_DETACHED;
-        #endif
-
-        _USBHub_ResetStateJump( i );
-        return USB_SUCCESS;
-    }
-    
-    return USB_HUB_ILLEGAL_REQUEST;
-}
-
-
 /****************************************************************************
   Function:
     BOOL USBHostHubInitialize( BYTE address, DWORD flags, BYTE clientDriverID )
@@ -1034,10 +980,9 @@ void USBHostHubTasks( void )
 										if(errorCode){
 										 if(USB_ENDPOINT_STALLED == errorCode) {                                      
 										 	USBHostClearEndpointErrors( deviceInfoHub[i].deviceAddress, 0 );  
-											if ((USBHostResetDevice(deviceInfoHub[i].deviceAddress) == USB_SUCCESS) && (USBHubResetDevice(deviceInfoHub[i].deviceAddress) == USB_SUCCESS)) {
-											USBHostTasks(i);
+											deviceInfoHub[i].flags.bfReset = 1;
+											USBHostHubResetDevice( deviceInfoHub[i].deviceAddress );
 											break;
-											}
 											}								 
 											
 										else {
@@ -2138,57 +2083,6 @@ BOOL USBHostHubEventHandler( BYTE address, USB_EVENT event, void *data, DWORD si
 // *****************************************************************************
 // *****************************************************************************
 
-
-/*******************************************************************************
-  Function:
-    void _USBHub_ResetStateJump( BYTE i )
-  Summary:
-  Description:
-    This function determines which portion of the reset processing needs to
-    be executed next and jumps to that state.
-Precondition:
-    The device information must be in the deviceInfoHub array.
-  Parameters:
-    BYTE i  - Index into the deviceInfoHub structure for the device to reset.
-  Returns:
-    None
-  Remarks:
-    None
-*******************************************************************************/
-void _USBHub_ResetStateJump( BYTE i )
-{
-    BYTE    errorCode;
-
-    if (deviceInfoHub[i].flags.bfReset)
-    {
-         errorCode = !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_INTERFACE,
-                        USB_HUB_RESET, 0, deviceInfoHub[i].interface, 0, NULL, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID );
-        if (errorCode)
-        {
-            _USBHostHub_TerminateTransfer( USB_HUB_RESET_ERROR );
-        }
-        else
-        {
-			deviceInfoHub[i].state = deviceInfoHub[i].returnState;
-			deviceInfoHub[i].deviceAddress = 0;
-        }
-    }
-    else
-    {
-        if (!deviceInfoHub[i].errorCode)
-		{
-			USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_HUB_RESET, NULL, 0 );
-		}
-        else
-        {
-			USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_HUB_RESET_ERROR, NULL, 0 );
-        }        
-
-        deviceInfoHub[i].state = deviceInfoHub[i].returnState;
-		deviceInfoHub[i].deviceAddress = 0;
-    }
-}
-
 /*******************************************************************************
   Function:
     void _USBHostHub_ResetStateJump( BYTE i )
@@ -2215,7 +2109,7 @@ void _USBHostHub_ResetStateJump( BYTE i )
                         USB_HUB_RESET, 0, deviceInfoHub[i].interface, 0, NULL, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID );
         if (errorCode)
         {
-            _USBHostHub_TerminateTransfer( USB_HUB_RESET_ERROR );
+            _USBHostHub_TerminateReadTransfer( USB_HUB_RESET_ERROR );
         }
         else
         {
