@@ -1,35 +1,27 @@
 /******************************************************************************
-
   USB Host Hub Device Driver
-
 This is the Hub Class driver file for a USB Embedded Host device.
 This file should be used in a project with usb_host.c to provided the USB
 hardware interface.
-
 To interface with usb_host.c, the routine USBHostHubClientInitialize() should be
 specified as the Initialize() function, and USBHostHubClientEventHandler() should
 be specified as the EventHandler() function in the usbClientDrvTable[] array
 declared in usb_config.h.
-
 Since hubs are performed with interrupt transfers, USB_SUPPORT_INTERRUPT_TRANSFERS
 must be defined. 
-
 This code is heavily based on Cypress's SH811 code for USB Hub Class. Major props 
 to them for making the design of the code. Commands sent are based on USB 2.0
 specs. Major props to Tsuneo from the Microchip Forums for bringing ideas on how
 to make a hub class driver work.
-
 *******************************************************************************/
 //DOM-IGNORE-BEGIN
 /******************************************************************************
-
  File Name:       usb_host_hub.c
  Dependencies:    None
  Processor:       PIC24F/PIC32MX
  Compiler:        C30/C32
  Author:		  David Rigel Magsipoc
  Company:         USB Boys :D
-
 Change History:
   Rev         Description
   ----------  ----------------------------------------------------------
@@ -55,7 +47,6 @@ Change History:
 
 // *****************************************************************************
 /* Max Number of Downstream Port Devices
-
 This value represents the maximum number of attached devices this class driver
 can support.  If the user does not define a value, it will be set to 1.
 Currently this must be set to 1, due to limitations in the USB Host layer.
@@ -66,7 +57,6 @@ Currently this must be set to 1, due to limitations in the USB Host layer.
 
 // *****************************************************************************
 /* Max Number of Hub Devices
-
 This value represents the maximum number of attached devices this class driver
 can support.  If the user does not define a value, it will be set to 1.
 Currently this must be set to 1, due to limitations in the USB Host layer.
@@ -296,7 +286,6 @@ Currently this must be set to 1, due to limitations in the USB Host layer.
 
 // *****************************************************************************
 /* USB Hub Device Information
-
    This structure is used to hold information of all the interfaces in a device that is unique
 */
 
@@ -311,7 +300,6 @@ typedef struct _USB_HUB_INTERFACE_DETAILS
 } USB_HUB_INTERFACE_DETAILS;
 
 /* USB Hub Device Information
-
 This structure is used to hold all the information about an attached hub device.
 */
 
@@ -352,7 +340,6 @@ typedef struct _USB_HUB_DEVICE_INFO
 } USB_HUB_DEVICE_INFO;
 
 /* USB Hub Device Information
-
 This structure is used to hold the port status and port change bits returned by a hub device.
 */
 
@@ -365,7 +352,6 @@ typedef struct _USB_PORT_STATUS
 } USB_PORT_STATUS;
 
 /* USB Hub Device Information
-
 This structure holds the data regarding the attached devices on a hub.
 */
 
@@ -384,6 +370,7 @@ typedef struct _USB_HUB_DEVICE										// USB Address #0(enum), #1(Hub), #2..#5
 //******************************************************************************
 
 void _USBHostHub_ResetStateJump( BYTE i );
+void _USBHub_ResetStateJump( BYTE i );
 
 //******************************************************************************
 //******************************************************************************
@@ -463,20 +450,15 @@ WORD								state;
 /*******************************************************************************
   Function:
     BOOL USBHostHubDeviceDetect( BYTE deviceAddress )
-
   Description:
     This function determines if a Hub device is attached and ready to use.
-
   Precondition:
     None
-
   Parameters:
     BYTE deviceAddress  - Address of the attached device.
-
   Return Values:
     TRUE   -  Hub present and ready
     FALSE  -  Hub not present or not ready
-
   Remarks:
     This function replaces the USBHostHub_ApiDeviceDetect() function.
 *******************************************************************************/
@@ -484,14 +466,14 @@ BOOL USBHostHubDeviceDetect( BYTE deviceAddress )
 {
     BYTE    i;
  
-	DBPRINTF("USBHostHubDeviceDetect (BYTE deviceAddress = %x)\n", deviceAddress);   
+//	DBPRINTF("USBHostHubDeviceDetect (BYTE deviceAddress = %x)\n", deviceAddress);   
     // Find the correct device.
     for (i=0; (i<USB_MAX_HUB_DEVICES) && (deviceInfoHub[i].deviceAddress != deviceAddress); i++);
     if (i == USB_MAX_HUB_DEVICES)
     {
         return FALSE;
     }
-    if ((USBHostHubDeviceStatus(i) == USB_HUB_NORMAL_RUNNING) &&
+    if ((USBHostHubDeviceStatus(deviceAddress) == USB_HUB_NORMAL_RUNNING) &&
         (deviceAddress != 0))
     {
         return TRUE;
@@ -503,17 +485,12 @@ BOOL USBHostHubDeviceDetect( BYTE deviceAddress )
 /*******************************************************************************
   Function:
     BYTE    USBHostHubDeviceStatus( BYTE deviceAddress )
-
   Summary:
-
   Description:
     This function determines the status of a hub device.
-
   Preconditions:  None
-
   Parameters:
     BYTE deviceAddress - address of device to query
-
   Return Values:
     USB_HUB_DEVICE_NOT_FOUND           -  Illegal device address, or the
                                           device is not an Hub
@@ -525,7 +502,6 @@ BOOL USBHostHubDeviceDetect( BYTE deviceAddress )
                                           ready to send and receive reports
     USB_HUB_DEVICE_HOLDING             -
     USB_HUB_DEVICE_DETACHED            -  Hub detached.
-
   Remarks:
     None
 *******************************************************************************/
@@ -534,7 +510,7 @@ BYTE USBHostHubDeviceStatus( BYTE deviceAddress )
     BYTE    i;
     BYTE    status;
 
-	DBPRINTF("USBHostHubDeviceStatus(BYTE deviceAddress = %x)\n", deviceAddress);
+//	DBPRINTF("USBHostHubDeviceStatus(BYTE deviceAddress = %x)\n", deviceAddress);
 
     // Find the correct device.
     for (i=0; (i<USB_MAX_HUB_DEVICES) && (deviceInfoHub[i].deviceAddress != deviceAddress); i++);
@@ -544,6 +520,7 @@ BYTE USBHostHubDeviceStatus( BYTE deviceAddress )
     }
 
     status = USBHostDeviceStatus( i );
+//	DBPRINTF("Hub Status = %x\n", status);
     if (status != USB_DEVICE_ATTACHED)
     {
         return status;
@@ -578,25 +555,19 @@ BYTE USBHostHubDeviceStatus( BYTE deviceAddress )
 /*******************************************************************************
   Function:
     BYTE USBHostHubResetDevice( BYTE deviceAddress )
-
   Summary:
     This function starts a Hub reset.
-
   Description:
     This function starts a Hub reset.  A reset can be
     issued only if the device is attached and not being initialized.
-
   Precondition:
     None
-
   Parameters:
     BYTE deviceAddress - Device address
-
   Return Values:
     USB_SUCCESS                 - Reset started
     USB_HUB_DEVICE_NOT_FOUND    - No device with specified address
     USB_HUB_ILLEGAL_REQUEST     - Device is in an illegal state for reset
-
   Remarks:
     None
 *******************************************************************************/
@@ -634,35 +605,81 @@ BYTE USBHostHubResetDevice( BYTE deviceAddress )
     return USB_HUB_ILLEGAL_REQUEST;
 }
 
+/*******************************************************************************
+  Function:
+    BYTE USBHubResetDevice( BYTE deviceAddress )
+  Summary:
+    This function starts a Hub reset due to a stalled endpoint.
+  Description:
+    This function starts a Hub reset.  A reset can be
+    issued only if the device is attached and not being initialized.
+  Precondition:
+    None
+  Parameters:
+    BYTE deviceAddress - Device address
+  Return Values:
+    USB_SUCCESS                 - Reset started
+    USB_HUB_DEVICE_NOT_FOUND    - No device with specified address
+    USB_HUB_ILLEGAL_REQUEST     - Device is in an illegal state for reset
+  Remarks:
+    None
+*******************************************************************************/
+BYTE USBHubResetDevice( BYTE deviceAddress )
+{
+    BYTE    i;
+
+    // Find the correct device.
+    for (i=0; (i<USB_MAX_HUB_DEVICES) && (deviceInfoHub[i].deviceAddress != deviceAddress); i++);
+    if (i == USB_MAX_HUB_DEVICES)
+    {
+        return USB_HUB_DEVICE_NOT_FOUND;
+    }
+
+    #ifndef USB_ENABLE_TRANSFER_EVENT
+    if (((deviceInfoHub[i].state & STATE_MASK) != STATE_DETACHED) &&
+        ((deviceInfoHub[i].state & STATE_MASK) != STATE_INITIALIZE_DEVICE))
+    #else
+    if ((deviceInfoHub[i].state != STATE_DETACHED) &&
+        (deviceInfoHub[i].state != STATE_INITIALIZE_DEVICE))
+    #endif
+    {
+        deviceInfoHub[i].flags.val |= MARK_RESET_RECOVERY;
+        deviceInfoHub[i].flags.bfReset = 1;
+        #ifndef USB_ENABLE_TRANSFER_EVENT
+            deviceInfoHub[i].returnState = STATE_DETACHED;
+        #else
+            deviceInfoHub[i].returnState = STATE_DETACHED;
+        #endif
+
+        _USBHub_ResetStateJump( i );
+        return USB_SUCCESS;
+    }
+    
+    return USB_HUB_ILLEGAL_REQUEST;
+}
 
 
 /****************************************************************************
   Function:
     BOOL USBHostHubInitialize( BYTE address, DWORD flags, BYTE clientDriverID )
-
   Summary:
     This function is the initialization routine for this client driver.
-
   Description:
     This function is the initialization routine for this client driver.  It
     is called by the host layer when the USB device is being enumerated.  For
     a hub device, we need to make sure that we have room for a new
     device, and that the device has at least one endpoint called status change.
-
   Precondition:
     None
-
   Parameters:
     BYTE address        - Address of the new device
     DWORD flags			- Initialization flags
     BYTE clientDriverID - ID to send when issuing a Device Request via
                             USBHostIssueDeviceRequest(), USBHostSetDeviceConfiguration(),
                             or USBHostSetDeviceInterface().
-
   Return Values:
     TRUE   - We can support the device.
     FALSE  - We cannot support the device.
-
   Remarks:
     None
   ***************************************************************************/
@@ -679,7 +696,7 @@ BOOL USBHostHubInitialize( BYTE address, DWORD flags, BYTE clientDriverID )
 	USB_HUB_INTERFACE_DETAILS	*pNewInterfaceDetails	= NULL;
 
 
-//	DBPRINTF( "\nHub: USBHubClientInitialize(0" );
+	DBPRINTF( "Hub: USBHubClientInitialize\n" );
 
 	// Find the free slot in the table.  If we cannot find one, kick off the device.
 	for (device = 0; (device < USB_MAX_HUB_DEVICES) && (deviceInfoHub[device].deviceAddress != 0); device++);
@@ -805,26 +822,20 @@ BOOL USBHostHubInitialize( BYTE address, DWORD flags, BYTE clientDriverID )
 /*******************************************************************************
   Function:
      void USBHostHubTasks( void )
-
   Summary:
     This function performs the maintenance tasks required by Hub class
-
   Description:
     This function performs the maintenance tasks required by the Hub
     class.  If transfer events from the host layer are not being used, then
     it should be called on a regular basis by the application.  If transfer
     events from the host layer are being used, this function is compiled out,
     and does not need to be called.
-
   Precondition:
     USBHostHubInitialize() has been called.
-
   Parameters:
     None - None
-
   Returns:
     None
-
   Remarks:
     None
 *******************************************************************************/
@@ -835,14 +846,15 @@ void USBHostHubTasks( void )
    	BYTE    errorCode;
    	BYTE    i;
 
-	DBPRINTF("USBHostHubTasks(deviceInfoHub[i].deviceAddress = deviceInfoHub[%x", i);
-	DBPRINTF("].%x\n", deviceInfoHub[i].deviceAddress);
-
 	for (i=0; i<USB_MAX_HUB_DEVICES; i++)
    	{
        	if (deviceInfoHub[i].deviceAddress != 0) /* device address updated by lower layer */
 		{
-      		switch (deviceInfoHub[i].state & STATE_MASK)
+
+		DBPRINTF("USBHostHubTasks(deviceAddress = %x,", deviceInfoHub[i].deviceAddress);
+		DBPRINTF(" state = %x)\n", deviceInfoHub[i].state);
+      		
+			switch (deviceInfoHub[i].state & STATE_MASK)
 			{
       			case STATE_DETACHED:
 					// No device attached.
@@ -889,9 +901,15 @@ void USBHostHubTasks( void )
 												break;
 											}
 											// send getdescriptor() request
-											if ( !USBHostIssueDeviceRequest(deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_DEVICE,
-											    USB_REQUEST_GET_DESCRIPTOR, DESCRIPTOR_STATUS_CHANGE, 0, 0x47,
-											    deviceInfoHub[i].StatusChange, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+											if ( USBHostIssueDeviceRequest(
+													deviceInfoHub[i].deviceAddress, 
+													USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_DEVICE,
+											    	USB_REQUEST_GET_DESCRIPTOR, 
+													DESCRIPTOR_STATUS_CHANGE, 
+													0, 
+													0x47,
+											    	deviceInfoHub[i].StatusChange, 
+													USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) == USB_SUCCESS )
 											{
 												_USBHostHub_SetNextSubSubState();
 											}
@@ -937,15 +955,22 @@ void USBHostHubTasks( void )
 									// If we are currently sending a token, we cannot do anything.
 									if (U1CONbits.TOKBUSY)
 										break;
-									if((deviceInfoHub[i].Status = (BYTE *)malloc(sizeof(WORD))) == NULL )
-									{
-										_USBHostHub_LockDevice( USB_MEMORY_ALLOCATION_ERROR );
-										break;
-									}
+									if((deviceInfoHub[i].Status = (BYTE *)malloc(sizeof(WORD))) == NULL)
+											{
+												_USBHostHub_LockDevice( USB_MEMORY_ALLOCATION_ERROR );
+												break;
+											}
 									// send getstatus() request
-									if (!USBHostIssueDeviceRequest(deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE,
-									    USB_REQUEST_GET_STATUS, 0, 0, 0x02,
-									    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+									if (USBHostIssueDeviceRequest(
+											deviceInfoHub[i].deviceAddress, 
+											USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE,
+									    	USB_REQUEST_GET_STATUS, 
+											0, 
+											deviceInfoHub[i].port, //MODIFICATION
+											4,
+									    	deviceInfoHub[i].Status, 
+											USB_DEVICE_REQUEST_GET, 
+											deviceInfoHub[i].clientDriverID) == USB_SUCCESS )
 									{
 										_USBHostHub_SetNextSubSubState();
 									}
@@ -987,9 +1012,16 @@ void USBHostHubTasks( void )
 									if (U1CONbits.TOKBUSY)
 										break;
 									// Send clear port feature : C PORT CONNECTION.
-									if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-									    USB_REQUEST_CLEAR_FEATURE, C_PORT_CONNECTION, deviceInfoHub[i].port, 0,
-									    0, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID) )
+									if( !USBHostIssueDeviceRequest( 
+											deviceInfoHub[i].deviceAddress, 
+											USB_SETUP_HOST_TO_DEVICE|USB_SETUP_TYPE_CLASS|USB_SETUP_RECIPIENT_OTHER, // 0x00|0x20|0x03 bmRequestType
+		    								USB_REQUEST_CLEAR_FEATURE, 
+											C_PORT_CONNECTION, 
+											deviceInfoHub[i].port, 
+											0,
+									    	0, 
+											USB_DEVICE_REQUEST_SET, 
+											deviceInfoHub[i].clientDriverID) )
 									{
 										_USBHostHub_SetNextSubSubState();
 									}
@@ -998,18 +1030,30 @@ void USBHostHubTasks( void )
 								case SUBSUBSTATE_WAIT_FOR_SEND_CLEAR_PORT_FEATURE:
 									if ( USBHostTransferIsComplete( deviceInfoHub[i].deviceAddress, 0, &errorCode, &byteCount ))
 									{
-										if(errorCode)
-										{
+										 
+										if(errorCode){
+										 if(USB_ENDPOINT_STALLED == errorCode) {                                      
+										 	USBHostClearEndpointErrors( deviceInfoHub[i].deviceAddress, 0 );  
+											if ((USBHostResetDevice(deviceInfoHub[i].deviceAddress) == USB_SUCCESS) && (USBHubResetDevice(deviceInfoHub[i].deviceAddress) == USB_SUCCESS)) {
+											USBHostTasks(i);
+											break;
+											}
+											}								 
+											
+										else {
 											/* Set error code */
-											_USBHostHub_LockDevice( errorCode );
+											_USBHostHub_LockDevice( errorCode );	
+											_USBHostHub_SetNextSubSubState();
+											}
 										}
-									}
+									}	
+
 									else
 									{
     	                           		// Clear the STALL.  Since it is EP0, we do not have to clear the stall.
 										USBHostClearEndpointErrors( deviceInfoHub[i].deviceAddress, 0 );
+										_USBHostHub_SetNextSubSubState();
 									}
-									_USBHostHub_SetNextSubSubState();
 									break;
 
 								case SUBSUBSTATE_SEND_CLEAR_PORT_FEATURE_COMPLETE:
@@ -1084,9 +1128,16 @@ void USBHostHubTasks( void )
 									// If we are currently sending a token, we cannot do anything.
 									if (U1CONbits.TOKBUSY)
 										break;
-									if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-									    USB_REQUEST_GET_STATUS, 0, deviceInfoHub[i].port, 4,
-									    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+									if( !USBHostIssueDeviceRequest( 
+											deviceInfoHub[i].deviceAddress, 
+											USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+									    	USB_REQUEST_GET_STATUS, 
+											0, 
+											deviceInfoHub[i].port, 
+											4,
+									    	deviceInfoHub[i].Status, 
+											USB_DEVICE_REQUEST_GET, 
+											deviceInfoHub[i].clientDriverID) )
 									{
 										_USBHostHub_SetNextSubSubState();
 									}
@@ -1237,26 +1288,19 @@ void USBHostHubTasks( void )
 /*******************************************************************************
   Function:
     void  USBPortInitialize( void )
-
-
   Summary:
     This function performs the appropriate tasks to be done when a change in
 	the hubchange endpoint is detected.
-
   Description:
     This function performs the appropriate tasks to be done when a change in
 	the hubchange endpoint is detected. The port number is detected and the port
 	resets. After this is done, the device is ready for enumeration.
-
   Preconditions:
     deviceInfoHub[i].StatusChange[0] should have a value
-
   Parameters:
     None
-
   Return Values:
     None
-
   Remarks:
     None
 *******************************************************************************/
@@ -1791,24 +1835,19 @@ void USBPortInitialize( void )
   Function:
   BYTE  USBHostHubTransfer( BYTE deviceAddress, BYTE interfaceNum, WORD size
                         BYTE *data)
-
   Summary:
     This function starts a Hub transfer.
-
   Description:
     This function starts a Hub transfer. A read/write wrapper is provided in
     application interface file to access this function. We use this to get the
     status change endpoint.
-
   Preconditions:
     None
-
   Parameters:
     BYTE deviceAddress      - Device address
     BYTE interfaceNum       - Interface number of the device
     BYTE size               - Byte size of the data buffer
     BYTE *data              - Pointer to the data buffer
-
   Return Values:
     USB_SUCCESS                 - Request started successfully
     USB_HUB_DEVICE_NOT_FOUND    - No device with specified address
@@ -1816,7 +1855,6 @@ void USBPortInitialize( void )
                                   performing a transfer
     Others                      - Return values from USBHostIssueDeviceRequest(),
                                     USBHostRead(), and USBHostWrite()
-
   Remarks:
     None
 *******************************************************************************/
@@ -1893,25 +1931,20 @@ BYTE USBHostHubTransfer( BYTE deviceAddress, BYTE interfaceNum, WORD size, BYTE 
   Function:
     BOOL USBHostubTransferIsComplete( BYTE deviceAddress,
                         BYTE errorCode, DWORD byteCount )
-
   Summary:
     This function indicates whether or not the last transfer is complete.
-
   Description:
     This function indicates whether or not the last transfer is complete.
     If the functions returns TRUE, the returned byte count and error
     code are valid. Since only one transfer can be performed at once
     and only one endpoint can be used, we only need to know the
     device address.
-
   Precondition:
     None
-
   Parameters:
     BYTE deviceAddress  - Device address
     BYTE *errorCode     - Error code from last transfer
     DWORD *byteCount    - Number of bytes transferred
-
   Return Values:
     TRUE    - Transfer is complete, errorCode is valid
     FALSE   - Transfer is not complete, errorCode is not valid
@@ -1959,16 +1992,12 @@ BOOL USBHostHubTransferIsComplete( BYTE deviceAddress, BYTE *errorCode, BYTE *by
 /****************************************************************************
   Function:
     BYTE USBHostHubResetDeviceWithWait( BYTE deviceAddress  )
-
   Description:
     This function resets a Hub device, and waits until the reset is complete.
-
   Precondition:
     None
-
   Parameters:
     BYTE deviceAddress  - Address of the device to reset.
-
   Return Values:
     USB_SUCCESS                 - Reset successful
     USB_HUB_RESET_ERROR         - Error while resetting device
@@ -2017,29 +2046,23 @@ BYTE USBHostHubResetDeviceWithWait( BYTE deviceAddress, BYTE i  )
   Function:
     BOOL USBHostHubEventHandler( BYTE address, USB_EVENT event,
                         void *data, DWORD size )
-
   Precondition:
     The device has been initialized.
-
   Summary:
     This function is the event handler for this client driver.
-
   Description:
     This function is the event handler for this client driver.  It is called
     by the host layer when various events occur. Not much event occurs on a
 	hub that is not handled by hubtasks so leave this as is unless there are
 	a few more events not covered.
-
   Parameters:
     BYTE address    - Address of the device
     USB_EVENT event - Event that has occurred
     void *data      - Pointer to data pertinent to the event
     DWORD size       - Size of the data
-
   Return Values:
     TRUE   - Event was handled
     FALSE  - Event was not handled
-
   Remarks:
     None
 *******************************************************************************/
@@ -2118,23 +2141,67 @@ BOOL USBHostHubEventHandler( BYTE address, USB_EVENT event, void *data, DWORD si
 
 /*******************************************************************************
   Function:
-    void _USBHostHub_ResetStateJump( BYTE i )
-
+    void _USBHub_ResetStateJump( BYTE i )
   Summary:
-
   Description:
     This function determines which portion of the reset processing needs to
     be executed next and jumps to that state.
-
 Precondition:
     The device information must be in the deviceInfoHub array.
-
   Parameters:
     BYTE i  - Index into the deviceInfoHub structure for the device to reset.
-
   Returns:
     None
+  Remarks:
+    None
+*******************************************************************************/
+void _USBHub_ResetStateJump( BYTE i )
+{
+    BYTE    errorCode;
 
+    if (deviceInfoHub[i].flags.bfReset)
+    {
+         errorCode = !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_INTERFACE,
+                        USB_HUB_RESET, 0, deviceInfoHub[i].interface, 0, NULL, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID );
+        if (errorCode)
+        {
+            _USBHostHub_TerminateTransfer( USB_HUB_RESET_ERROR );
+        }
+        else
+        {
+			deviceInfoHub[i].state = deviceInfoHub[i].returnState;
+			deviceInfoHub[i].deviceAddress = 0;
+        }
+    }
+    else
+    {
+        if (!deviceInfoHub[i].errorCode)
+		{
+			USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_HUB_RESET, NULL, 0 );
+		}
+        else
+        {
+			USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_HUB_RESET_ERROR, NULL, 0 );
+        }        
+
+        deviceInfoHub[i].state = deviceInfoHub[i].returnState;
+		deviceInfoHub[i].deviceAddress = 0;
+    }
+}
+
+/*******************************************************************************
+  Function:
+    void _USBHostHub_ResetStateJump( BYTE i )
+  Summary:
+  Description:
+    This function determines which portion of the reset processing needs to
+    be executed next and jumps to that state.
+Precondition:
+    The device information must be in the deviceInfoHub array.
+  Parameters:
+    BYTE i  - Index into the deviceInfoHub structure for the device to reset.
+  Returns:
+    None
   Remarks:
     None
 *******************************************************************************/
