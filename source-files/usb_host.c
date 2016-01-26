@@ -31,8 +31,8 @@ USB_INTERRUPT_T1MSECIF equals 0x40.
 Software License Agreement
 
 The software supplied herewith by Microchip Technology Incorporated
-(the Company) for its PICmicro® Microcontroller is intended and
-supplied to you, the Companys customer, for use solely and
+(the ?Company?) for its PICmicro® Microcontroller is intended and
+supplied to you, the Company?s customer, for use solely and
 exclusively on Microchip PICmicro Microcontroller products. The
 software is owned by the Company and/or its supplier, and is
 protected under applicable copyright laws. All rights are reserved.
@@ -41,7 +41,7 @@ user to criminal sanctions under applicable laws, as well as to
 civil liability for the breach of the terms and conditions of this
 license.
 
-THIS SOFTWARE IS PROVIDED IN AN AS IS CONDITION. NO WARRANTIES,
+THIS SOFTWARE IS PROVIDED IN AN ?AS IS? CONDITION. NO WARRANTIES,
 WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
 TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
 PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
@@ -187,6 +187,7 @@ static USB_DEVICE_INFO               usbDeviceInfo;                             
 #endif
 static USB_ROOT_HUB_INFO             usbRootHubInfo;                             // Information about a specific port.
 
+
 //******************************************************************************
 //******************************************************************************
 // Section: Data Structures
@@ -256,7 +257,7 @@ BYTE USBHostClearEndpointErrors( BYTE deviceAddress, BYTE endpoint )
 	BYTE							DeviceNumber;
 
 	DeviceNumber = _USB_FindDeviceAddress( deviceAddress );
-    {
+	if (DeviceNumber == USB_MAX_DEVICES) { //MODIFICATION (1/21/2016)
         return USB_UNKNOWN_DEVICE;
     }
 
@@ -327,7 +328,7 @@ BOOL    USBHostDeviceSpecificClientDriver( BYTE deviceAddress )
 
 /****************************************************************************
   Function:
-    BYTE USBHostDeviceStatus( BYTE deviceAddress )
+    BYTE USBHostDeviceStatus( BYTE DeviceNumber )
 
   Summary:
     This function returns the current status of a device.
@@ -340,7 +341,7 @@ BOOL    USBHostDeviceSpecificClientDriver( BYTE deviceAddress )
     None
 
   Parameters:
-    BYTE deviceAddress  - Device address
+    BYTE DeviceNumber  - Port number of the device
 
   Return Values:
     USB_DEVICE_ATTACHED                 - Device is attached and running
@@ -363,37 +364,35 @@ BOOL    USBHostDeviceSpecificClientDriver( BYTE deviceAddress )
     None
   ***************************************************************************/
 
-BYTE USBHostDeviceStatus( BYTE deviceAddress )
+BYTE USBHostDeviceStatus( BYTE DeviceNumber )
 {
-	BYTE		DeviceNumber;
-
-	DBPRINTF("USBHostDeviceStatus(deviceAddress = %x)", deviceAddress);
-	DBPRINTF(", state = %x\n",portdeviceInfo[deviceAddress].state);
-    if ((portdeviceInfo[deviceAddress].state & STATE_MASK) == STATE_DETACHED)
+//	DBPRINTF("USBHostDeviceStatus(DeviceNumber = %x)", DeviceNumber);
+//	DBPRINTF(", state = %x\n",portdeviceInfo[DeviceNumber].state);
+    if ((portdeviceInfo[DeviceNumber].state & STATE_MASK) == STATE_DETACHED)
     {
-		DBPRINTF("Device Status = USB_DEVICE_DETACHED");
+//		DBPRINTF("Device Status = USB_DEVICE_DETACHED\n");
         return USB_DEVICE_DETACHED;
     }
 
-    if ((portdeviceInfo[deviceAddress].state & STATE_MASK) == STATE_RUNNING)
+    if ((portdeviceInfo[DeviceNumber].state & STATE_MASK) == STATE_RUNNING)
     {
-        if ((portdeviceInfo[deviceAddress].state & SUBSTATE_MASK) == SUBSTATE_SUSPEND_AND_RESUME)
+        if ((portdeviceInfo[DeviceNumber].state & SUBSTATE_MASK) == SUBSTATE_SUSPEND_AND_RESUME)
         {
-			DBPRINTF("Device Status = USB_DEVICE_SUSPENDED");
+//			DBPRINTF("Device Status = USB_DEVICE_SUSPENDED\n");
             return USB_DEVICE_SUSPENDED;
         }
         else
         {
-			DBPRINTF("Device Status = USB_DEVICE_ATTACHED");
+//			DBPRINTF("Device Status = USB_DEVICE_ATTACHED\n");
 			return USB_DEVICE_ATTACHED;
         }
     }
 
-    if ((portdeviceInfo[deviceAddress].state & STATE_MASK) == STATE_HOLDING)
+    if ((portdeviceInfo[DeviceNumber].state & STATE_MASK) == STATE_HOLDING)
     {
-        return portdeviceInfo[deviceAddress].usbDeviceInfo.errorCode;
+        return portdeviceInfo[DeviceNumber].usbDeviceInfo.errorCode;
     }
-	DBPRINTF("Device Status = USB_DEVICE_ENUMERATING");
+//	DBPRINTF("Device Status = USB_DEVICE_ENUMERATING\n");
     return USB_DEVICE_ENUMERATING;
 }
 
@@ -431,7 +430,7 @@ BOOL USBHostInit(  unsigned long flags  )
 {
 	BYTE i = 0;
 
-	DBPRINTF("USBHostInit()\n");
+//	DBPRINTF("USBHostInit()\n");
 
     // Allocate space for Endpoint 0.  We will initialize it in the state machine,
     // so we can reinitialize when another device connects.  If the Endpoint 0
@@ -940,12 +939,12 @@ BYTE USBHostResetDevice( BYTE deviceAddress )
         return USB_UNKNOWN_DEVICE;
     }
 
-    if ((usbHostState & STATE_MASK) == STATE_DETACHED)
+    if ((portdeviceInfo[DeviceNumber].state & STATE_MASK) == STATE_DETACHED)
     {
         return USB_ILLEGAL_REQUEST;
     }
 
-    usbHostState = STATE_DETACHED;
+    portdeviceInfo[DeviceNumber].state = STATE_DETACHED;
 
     return USB_SUCCESS;
 }
@@ -1184,6 +1183,8 @@ void USBHostShutdown( void )
     // Shut off the power to the module first, in case we are in an
     // overcurrent situation.
 
+//	DBPRINTF("USBHostShutdown()\n");
+
     #ifdef  USB_SUPPORT_OTG
         if (!USBOTGHnpIsActive())
         {
@@ -1331,7 +1332,7 @@ void USBHostTasks( BYTE DeviceNumber )
 //        UART2PutHex( pCurrentEndpoint->transferState );
 //        UART2PutChar('>');
     #endif
-//	DBPRINTF("\nUSBHostTasks Start\n");
+//	DBPRINTF("USBHostTasks Start\n");
 
     // The PIC32MX detach interrupt is not reliable.  If we are not in one of
     // the detached states, we'll do a check here to see if we've detached.
@@ -1399,8 +1400,8 @@ void USBHostTasks( BYTE DeviceNumber )
 
     //-------------------------------------------------------------------------
     // Main State Machine
-	DBPRINTF("Device is %x\n",DeviceNumber);
- 	DBPRINTF("\nstate %x\n",portdeviceInfo[DeviceNumber].state);
+//	DBPRINTF("Device number is %x,",DeviceNumber);
+// 	DBPRINTF("\tstate %x\n",portdeviceInfo[DeviceNumber].state);
     switch (portdeviceInfo[DeviceNumber].state & STATE_MASK)
     {
         case STATE_DETACHED:
@@ -1415,7 +1416,7 @@ void USBHostTasks( BYTE DeviceNumber )
 	                    USBHostShutdown();
 
                     #ifdef DEBUG_MODE
-                        UART2PrintString( "HOST: Initializing DETACHED state.\r\n" );
+                     //   DBPRINTF( "HOST: Initializing DETACHED state.\r\n" );
                     #endif
                     // Initialize Endpoint 0 attributes.
                     usbDeviceInfo.pEndpoint0->next                         = NULL;
@@ -1571,9 +1572,7 @@ void USBHostTasks( BYTE DeviceNumber )
                     switch (portdeviceInfo[DeviceNumber].state & SUBSUBSTATE_MASK)
                     {
                         case SUBSUBSTATE_START_SETTLING_DELAY:
-                            #ifdef DEBUG_MODE
-                                UART2PrintString( "HOST: Starting settling delay.\r\n" );
-                            #endif
+//                                DBPRINTF( "HOST: Starting settling delay.\r\n" );
 
                             // Clear and turn on the DETACH interrupt.
                             U1IR                    = USB_INTERRUPT_DETACH;   // The interrupt is cleared by writing a '1' to the flag.
@@ -1587,7 +1586,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             break;
 
                         case SUBSUBSTATE_WAIT_FOR_SETTLING:
-//							DBPRINTF("Wait for Settling");
+// 							DBPRINTF("Wait for Settling\t numTimerInterrupts = %x\n", numTimerInterrupts);
                             // Wait for the timer to finish in the background.
                             break;
 
@@ -1615,7 +1614,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             if ((pEP0Data = (BYTE *)malloc( 8 )) == NULL)
                             {
                                 #ifdef DEBUG_MODE
-                                    UART2PrintString( "HOST: Error alloc-ing pEP0Data\r\n" );
+                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data\r\n" );
                                 #endif
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
@@ -1651,7 +1650,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             if (!U1CONbits.JSTATE)
                             {
                                 #ifdef DEBUG_MODE
-                                    UART2PrintString( "HOST: Low Speed!\r\n" );
+                                    DBPRINTF( "HOST: Low Speed!\r\n" );
                                 #endif
                                 portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfIsLowSpeed    = 1;
                                 portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddressAndSpeed = 0x80;
@@ -1726,13 +1725,13 @@ void USBHostTasks( BYTE DeviceNumber )
                     switch (portdeviceInfo[DeviceNumber].state & SUBSUBSTATE_MASK)
                     {	
                         case SUBSUBSTATE_SEND_GET_DEVICE_DESCRIPTOR_SIZE:
-							DBPRINTF( "HOST: Getting Device Descriptor size.\r\n" );
+						//	DBPRINTF( "HOST: Getting Device Descriptor size.\r\n" );
                             
                             // Set up and send GET DEVICE DESCRIPTOR
                             if (pDeviceDescriptor != NULL)
                             {
-								pDeviceDescriptor = NULL;
-//								freez( pDeviceDescriptor );
+							//	pDeviceDescriptor = NULL;
+								freez( pDeviceDescriptor );
                             }
 							if (portdeviceInfo[DeviceNumber].pDeviceDescriptor != NULL)
 							{
@@ -1786,12 +1785,13 @@ void USBHostTasks( BYTE DeviceNumber )
                             // Allocate a buffer for the entire Device Descriptor
                             if ((portdeviceInfo[DeviceNumber].pDeviceDescriptor = (BYTE *)malloc( *pEP0Data )) == NULL)
                             {
-								DBPRINTF("\nCheck po %x %x\n",*pEP0Data, portdeviceInfo[DeviceNumber].pDeviceDescriptor);
+							//	DBPRINTF("\nCheck po %x %x\n",*pEP0Data, portdeviceInfo[DeviceNumber].pDeviceDescriptor);
                                 // We cannot continue.  Freeze until the device is removed.
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
                                 break;
                             }
+						//	DBPRINTF("\nCheck lang %p %x \n", *pEP0Data, portdeviceInfo[DeviceNumber].pDeviceDescriptor);
 							pDeviceDescriptor = portdeviceInfo[DeviceNumber].pDeviceDescriptor;
                             // Save the descriptor size in the descriptor (bLength)
                             *pDeviceDescriptor = *pEP0Data;
@@ -1862,7 +1862,7 @@ void USBHostTasks( BYTE DeviceNumber )
                             break;
 
                         case SUBSUBSTATE_GET_DEVICE_DESCRIPTOR_COMPLETE:
-							DBPRINTF("\nCheck lang %x %x",portdeviceInfo[DeviceNumber].pDeviceDescriptor,pDeviceDescriptor);
+							//DBPRINTF("\nCheck lang %x %x",portdeviceInfo[DeviceNumber].pDeviceDescriptor,pDeviceDescriptor);
 
                             // Clean up and advance to the next substate.
                             _USB_InitErrorCounters();
@@ -1878,7 +1878,7 @@ void USBHostTasks( BYTE DeviceNumber )
                     // Search the TPL for the device's VID & PID.  If a client driver is
                     // available for the over-all device, use it.  Otherwise, we'll search
                     // again later for an appropriate class driver.
-                    _USB_FindDeviceLevelClientDriver();
+                    _USB_FindDeviceLevelClientDriver(DeviceNumber);
 
                     // Advance to the next state to assign an address to the device.
                     //
@@ -1963,11 +1963,14 @@ void USBHostTasks( BYTE DeviceNumber )
                     // from highest to lowest so the lowest will be first in
                     // the list.
                     portdeviceInfo[DeviceNumber].countConfigurations = ((USB_DEVICE_DESCRIPTOR *)portdeviceInfo[DeviceNumber].pDeviceDescriptor)->bNumConfigurations;
-                    while (portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList != NULL)
+                           
+                  
+
+					while (portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList != NULL)
                     {
                         pTemp = (BYTE *)portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->next;
-                        free( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor );
-                        free( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList );
+                        freez( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor );
+                        freez( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList );
                         portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList = (USB_CONFIGURATION *)pTemp;
                     }
                     _USB_Port_SetNextSubState(DeviceNumber);
@@ -2013,6 +2016,8 @@ void USBHostTasks( BYTE DeviceNumber )
                             break;
 
                         case SUBSUBSTATE_GET_CONFIG_DESCRIPTOR_SIZECOMPLETE:
+							DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
+
                             // Allocate a buffer for an entry in the configuration descriptor list.
                             if ((pTemp = (BYTE *)malloc( sizeof (USB_CONFIGURATION) )) == NULL)
                             {
@@ -2021,6 +2026,7 @@ void USBHostTasks( BYTE DeviceNumber )
                                 _USB_Port_SetHoldState(DeviceNumber);
                                 break;
                             }
+							DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
 
                             // Allocate a buffer for the entire Configuration Descriptor
                             if ((((USB_CONFIGURATION *)pTemp)->descriptor = (BYTE *)malloc( ((WORD)pEP0Data[3] << 8) + (WORD)pEP0Data[2] )) == NULL)
@@ -2143,7 +2149,7 @@ void USBHostTasks( BYTE DeviceNumber )
                                     {
                                         // Free the memory allocated and
                                         // advance to  next configuration
-										DBPRINTF("\nHi\n");
+									//	DBPRINTF("\nHi\n");
                                         _USB_FreeConfigMemory(DeviceNumber);
                                         pCurrentConfigurationNode = pCurrentConfigurationNode->next;
                                     }
@@ -2506,7 +2512,6 @@ void USBHostTasks( BYTE DeviceNumber )
             }
             break;
     }
-
 }
 
 /****************************************************************************
@@ -2992,14 +2997,14 @@ BOOL _USB_FindClassDriver( BYTE bClass, BYTE bSubClass, BYTE bProtocol, BYTE *pb
     single client driver.
   ***************************************************************************/
 
-BOOL _USB_FindDeviceLevelClientDriver( void )
+BOOL _USB_FindDeviceLevelClientDriver( BYTE DeviceNumber )
 {
     WORD                   i;
     USB_DEVICE_DESCRIPTOR *pDesc = (USB_DEVICE_DESCRIPTOR *)pDeviceDescriptor;
 
     // Scan TPL
     i = 0;
-    portdeviceInfo[0].usbDeviceInfo.flags.bfUseDeviceClientDriver = 0;
+    portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfUseDeviceClientDriver = 0;
     while (i < NUM_TPL_ENTRIES)
     {
         if (usbTPL[i].flags.bfIsClassDriver)
@@ -3009,9 +3014,9 @@ BOOL _USB_FindDeviceLevelClientDriver( void )
                 (usbTPL[i].device.bSubClass == pDesc->bDeviceSubClass) &&
                 (usbTPL[i].device.bProtocol == pDesc->bDeviceProtocol)   )
             {
-                DBPRINTF( "HOST: Device validated by class\r\n" );
+             //   DBPRINTF( "HOST: Device validated by class\r\n" );
                 				//drm change mo tong baba
-                portdeviceInfo[0].usbDeviceInfo.flags.bfUseDeviceClientDriver = 1;
+                portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfUseDeviceClientDriver = 1;
             }
         }
         else
@@ -3027,20 +3032,20 @@ BOOL _USB_FindDeviceLevelClientDriver( void )
                 (usbTPL[i].device.idProduct == pDesc->idProduct)   )
             #endif
             {
-                DBPRINTF( "HOST: Device validated by VID/PID\r\n" );
-                portdeviceInfo[0].usbDeviceInfo.flags.bfUseDeviceClientDriver = 1;
+                // DBPRINTF( "HOST: Device validated by VID/PID\r\n" );
+                portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfUseDeviceClientDriver = 1;
             }
         }
 
-        if (portdeviceInfo[0].usbDeviceInfo.flags.bfUseDeviceClientDriver)
+        if (portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfUseDeviceClientDriver)
         {
             // Save client driver info
-            portdeviceInfo[0].usbDeviceInfo.deviceClientDriver = usbTPL[i].ClientDriver;
+            portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceClientDriver = usbTPL[i].ClientDriver;
 
             // Select configuration if it is given in the TPL
             if (usbTPL[i].flags.bfSetConfiguration)
             {
-                portdeviceInfo[0].usbDeviceInfo.currentConfiguration = usbTPL[i].bConfiguration;
+                portdeviceInfo[DeviceNumber].usbDeviceInfo.currentConfiguration = usbTPL[i].bConfiguration;
             }
 
             return TRUE;
@@ -3049,7 +3054,7 @@ BOOL _USB_FindDeviceLevelClientDriver( void )
         i++;
     }
 
-    DBPRINTF( "HOST: Device not yet validated\r\n" );
+    //DBPRINTF( "HOST: Device not yet validated\r\n" );
 
     return FALSE;
 }
@@ -4924,7 +4929,7 @@ BOOL _USB_ParseConfigurationDescriptor( BYTE DeviceNumber )
     portdeviceInfo[DeviceNumber].usbDeviceInfo.currentConfigurationPower = bMaxPower;
 
     // Success!
-	DBPRINTF("\nHOST: Parse Descriptor success\r\n" );
+	// DBPRINTF("\nHOST: Parse Descriptor success\r\n" );
     return TRUE;
 }
 
@@ -5320,7 +5325,7 @@ BOOL _USB_TransferInProgress( void )
 #define U1STAT_ODD_MASK                     0x04    // U1STAT bit mask for even/odd buffer bank
 
 #if defined(__C30__)
-void __attribute__((__interrupt__, no_auto_psv)) _USB1Interrupt( void )
+void __attribute__((__interrupt__, no_auto_psv)) _USB1Interrupt( BYTE DeviceNumber )
 #elif defined(__PIC32MX__)
 #pragma interrupt _USB1Interrupt ipl4 vector 45
 void _USB1Interrupt( void )
@@ -5328,6 +5333,8 @@ void _USB1Interrupt( void )
     #error Cannot define timer interrupt vector.
 #endif
 {
+
+	BYTE DeviceNumber;
 
     #if defined( __C30__)
         IFS5 &= 0xFFBF;
@@ -5342,6 +5349,9 @@ void _USB1Interrupt( void )
 
     if (U1OTGIEbits.T1MSECIE && U1OTGIRbits.T1MSECIF)
     {
+
+		DeviceNumber = 0;
+
         // The interrupt is cleared by writing a '1' to it.
         U1OTGIR = USB_INTERRUPT_T1MSECIF;
 
@@ -5378,7 +5388,7 @@ void _USB1Interrupt( void )
 
                     // Advance to the next state.  We can do this here, because the only time
                     // we'll get a timer interrupt is while we are in one of the holding states.
-                    _USB_SetNextSubSubState();
+                    _USB_SetNextSubSubState(DeviceNumber);
                 }
             }
          #else
@@ -5391,7 +5401,8 @@ void _USB1Interrupt( void )
 
                 // Advance to the next state.  We can do this here, because the only time
                 // we'll get a timer interrupt is while we are in one of the holding states.
-                _USB_SetNextSubSubState();
+                _USB_SetNextSubSubState(DeviceNumber);
+			
             }
          #endif
     }
@@ -5916,6 +5927,41 @@ void  _USB_Port_SetNextSubState( BYTE DeviceNumber ) {
 
 void  _USB_Port_SetNextSubSubState( BYTE DeviceNumber ) {
 	portdeviceInfo[DeviceNumber].state +=  NEXT_SUBSUBSTATE;
+}
+
+void  _USB_SetNextSubSubState( BYTE DeviceNumber ) {
+	portdeviceInfo[DeviceNumber].state +=  NEXT_SUBSUBSTATE;
+}
+
+/****************************************************************************
+  Function:
+    BYTE USBReturnDeviceAddress( BYTE DeviceNumber )
+
+  Summary:
+    This function returns the address of the device.
+
+  Description:
+    This function returns the address of the device to be called for USBHostHubDeviceDetect().
+
+  Precondition:
+    None
+
+  Parameters:
+    BYTE DeviceNumber  - Port number of the device
+
+  Return Values:
+	deviceAddress - Address given to the device (DeviceNumber + 1)    
+
+  Remarks:
+    None
+  ***************************************************************************/
+
+BYTE USBReturnDeviceAddress ( BYTE DeviceNumber ) {
+
+	BYTE deviceAddress;
+	deviceAddress = portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddress;
+	return deviceAddress;
+
 }
 
 /*************************************************************************
