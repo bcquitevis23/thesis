@@ -56,6 +56,7 @@
     #define PLL_96MHZ_OFF   0xFFFF
     #define PLL_96MHZ_ON    0xF7FF
 
+
     // Configuration Bit settings  for an Explorer 16 with USB PICtail Plus
     //      Primary Oscillator:             HS
     //      Internal USB 3.3v Regulator:    Disabled
@@ -112,6 +113,7 @@
 
 #else
 
+
     #error Cannot define configuration bits.
 
 #endif
@@ -123,6 +125,7 @@ BYTE deviceAddress;
 BYTE HubStatus;
 
 #define USB_MAX_DEVICES 5
+#define MAX_ALLOWED_CURRENT	(500)
 
 int main(void)
 {
@@ -164,35 +167,44 @@ int main(void)
 
         UART2Init();
     #endif
+	mJTAGPortEnable(1);
 
     while(1) {
         
         DBPRINTF("USB FILE TRANSFER HUB\n\n\n");
-        
-        for (DeviceNumber = 0; DeviceNumber<=USB_MAX_DEVICES; DeviceNumber++) {
-        
+
+		DeviceNumber = 0;
+
+
+		deviceAddress = USBReturnDeviceAddress(DeviceNumber);
         //USB stack process function
         USBTasks(DeviceNumber);
+            
+        //if no hub and msd devices are plugged in
+        while (!USBHostHubDeviceDetect(deviceAddress)) {
+		//	DBPRINTF("deviceAddress = %x\n", deviceAddress);
+            USBTasks(DeviceNumber);
+			deviceAddress = USBReturnDeviceAddress(DeviceNumber);
+        } 
 
         //if hub is plugged in
         if(USBHostHubDeviceDetect(deviceAddress)) {
             HubAttached = TRUE;
             event = EVENT_HUB_ATTACH;
             DBPRINTF("Hub Device Attached\n\nAddress:\t%x", deviceAddress);
-            DBPRINTF("\nStatus:\t%x", HubStatus);
                 //Just sit here until the device is removed.
                 while(HubAttached == TRUE) {
-                    USBHostHubTasks();
+                    USBTasks(DeviceNumber);
+					for (DeviceNumber = 1; DeviceNumber <=5 ; DeviceNumber++) {
+						if (USBHostMSDSCSIMediaDetect(DeviceNumber)) {
+							DBPRINTF("MSD Device Detected: Device Number = %x\n", DeviceNumber);
+						}
+					}
+					DeviceNumber = 0;
                 }
-            }        
-
-        //if no hub and msd devices are plugged in
-        while (!USBHostHubDeviceDetect(deviceAddress) || !USBHostMSDSCSIMediaDetect(DeviceNumber)) {
-            USBTasks(DeviceNumber);
-        } 
-                
+            } 
         //if msd device is plugged in
-        if (DeviceNumber == 2 || DeviceNumber == 3 || DeviceNumber == 4 || DeviceNumber == 5) {
+        if (USBHostMSDSCSIMediaDetect(DeviceNumber)) {
             
         f_mount(DeviceNumber, &fatfs[DeviceNumber]);
         
@@ -235,7 +247,6 @@ int main(void)
         res = f_close(&fp);
         }
         }
-    }
     return 0;
 }
 
@@ -284,6 +295,14 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
             // The data pointer points to a byte that represents the amount of power
             // requested in mA, divided by two.  If the device wants too much power,
             // we reject it.
+			if (((USB_VBUS_POWER_EVENT_DATA*)data)->current <= (MAX_ALLOWED_CURRENT / 2))
+            {
+                return TRUE;
+            }
+            else
+            {
+                DBPRINTF( "\n***** USB Error - device requires too much current *****\n" );
+            }
             return TRUE;
 
         case EVENT_VBUS_RELEASE_POWER:
