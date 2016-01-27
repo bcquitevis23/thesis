@@ -8,9 +8,7 @@
  				platforms.
  Complier:  	Microchip C18 (for PIC18), C30 (for PIC24), C32 (for PIC32)
  Company:		Microchip Technology, Inc.
-
  Software License Agreement:
-
  The software supplied herewith by Microchip Technology Incorporated
  (the “Company”) for its PIC® Microcontroller is intended and
  supplied to you, the Company’s customer, for use solely and
@@ -21,17 +19,14 @@
  user to criminal sanctions under applicable laws, as well as to
  civil liability for the breach of the terms and conditions of this
  license.
-
  THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
  WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
  TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
  PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
  IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
  CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
-
 ********************************************************************
  File Description:
-
  Change History:
   Rev   Description
   1.0   Initial release
@@ -117,11 +112,10 @@
     #error Cannot define configuration bits.
 
 #endif
-                
+    
 volatile BOOL HubAttached;  // if hub device is attached
 BYTE DeviceNumber;  
 USB_EVENT event;
-BYTE deviceAddress;
 BYTE HubStatus;
 
 #define USB_MAX_DEVICES 5
@@ -175,78 +169,71 @@ int main(void)
 
 		DeviceNumber = 0;
 
-
-		deviceAddress = USBReturnDeviceAddress(DeviceNumber);
         //USB stack process function
         USBTasks(DeviceNumber);
             
         //if no hub and msd devices are plugged in
-        while (!USBHostHubDeviceDetect(deviceAddress)) {
+        while (!USBHostHubDeviceDetect(1)) {
 		//	DBPRINTF("deviceAddress = %x\n", deviceAddress);
             USBTasks(DeviceNumber);
-			deviceAddress = USBReturnDeviceAddress(DeviceNumber);
         } 
 
         //if hub is plugged in
-        if(USBHostHubDeviceDetect(deviceAddress)) {
+        if(USBHostHubDeviceDetect(1)) {
             HubAttached = TRUE;
             event = EVENT_HUB_ATTACH;
-            DBPRINTF("Hub Device Attached\n\nAddress:\t%x", deviceAddress);
+            DBPRINTF("Hub Device Attached\n");
                 //Just sit here until the device is removed.
                 while(HubAttached == TRUE) {
                     USBTasks(DeviceNumber);
 					for (DeviceNumber = 1; DeviceNumber <=5 ; DeviceNumber++) {
 						if (USBHostMSDSCSIMediaDetect(DeviceNumber)) {
 							DBPRINTF("MSD Device Detected: Device Number = %x\n", DeviceNumber);
-						}
+							f_mount(DeviceNumber, &fatfs[DeviceNumber]);
+							        
+							        FRESULT res;
+							        FILINFO fno;
+							        DIR dir;
+							        char *fn;
+							        char filename[] = "text.txt";
+							        
+							    #if _USE_LFN
+							    static char lfn[_MAX_LFN * (_DF1S ? 2 : 1) + 1];
+							    fno.lfname = lfn;
+							    fno.lfsize = sizeof(lfn);
+							    #endif
+							
+							        FIL fp;
+							        res = f_open(&fp,filename, FA_CREATE_ALWAYS | FA_WRITE);
+							        res = f_puts("Hello World!\n\n", &fp);
+							        res = f_opendir(&dir, "");
+							        
+							        if(res = FR_OK) {
+							            for(;;) {
+							                res = f_readdir(&dir, &fno);
+							                if (res != FR_OK || fno.fname[0] == 0) break;
+							                if (fno.fname[0] == '.') continue;
+							#if _USE_LFN
+							            fn = *fno.lfname ? fno.lfname : fno.fname;
+							#else
+							            fn = fno.fname;
+							#endif 
+							            if (fno.fattrib & AM_DIR) {
+							                res = f_puts("\nDIR ", &fp);
+							            }
+							            else {
+							                res = f_puts("\nFIL ", &fp);
+							            }
+							            res = f_puts(fn, &fp);
+							            }
+							        }
+							        res = f_close(&fp);
+							        }
+							        }
+								DeviceNumber = 0;						
+							}
 					}
-					DeviceNumber = 0;
-                }
-            } 
-        //if msd device is plugged in
-        if (USBHostMSDSCSIMediaDetect(DeviceNumber)) {
-            
-        f_mount(DeviceNumber, &fatfs[DeviceNumber]);
-        
-        FRESULT res;
-        FILINFO fno;
-        DIR dir;
-        char *fn;
-        char filename[] = "text.txt";
-        
-    #if _USE_LFN
-    static char lfn[_MAX_LFN * (_DF1S ? 2 : 1) + 1];
-    fno.lfname = lfn;
-    fno.lfsize = sizeof(lfn);
-    #endif
-
-        FIL fp;
-        res = f_open(&fp,filename, FA_CREATE_ALWAYS | FA_WRITE);
-        res = f_puts("Hello World!\n\n", &fp);
-        res = f_opendir(&dir, "");
-        
-        if(res = FR_OK) {
-            for(;;) {
-                res = f_readdir(&dir, &fno);
-                if (res != FR_OK || fno.fname[0] == 0) break;
-                if (fno.fname[0] == '.') continue;
-#if _USE_LFN
-            fn = *fno.lfname ? fno.lfname : fno.fname;
-#else
-            fn = fno.fname;
-#endif 
-            if (fno.fattrib & AM_DIR) {
-                res = f_puts("\nDIR ", &fp);
-            }
-            else {
-                res = f_puts("\nFIL ", &fp);
-            }
-            res = f_puts(fn, &fp);
-            }
-        }
-        res = f_close(&fp);
-        }
-        }
+                } 
     return 0;
 }
 
