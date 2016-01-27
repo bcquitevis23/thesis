@@ -1605,7 +1605,8 @@ void USBHostTasks( BYTE DeviceNumber )
                     switch (portdeviceInfo[DeviceNumber].state & SUBSUBSTATE_MASK)
                     {
                         case SUBSUBSTATE_SET_RESET:
-                            // Prepare a data buffer for us to use.  We'll make it 8 bytes for now,
+                            /****MODIFICATION MOVED TO SUBSTATE_GET_DESCRIPTOR_SIZE
+							// Prepare a data buffer for us to use.  We'll make it 8 bytes for now,
                             // which is the minimum wMaxPacketSize for EP0.
                             if (pEP0Data != NULL)
                             {
@@ -1620,6 +1621,7 @@ void USBHostTasks( BYTE DeviceNumber )
                                 _USB_Port_SetHoldState(DeviceNumber);
                                 break;
                             }
+							END OF MODIFICATION*****/ 
 
                             // Initialize the USB Device information
                             portdeviceInfo[DeviceNumber].usbDeviceInfo.currentConfiguration      = 0;
@@ -1722,6 +1724,9 @@ void USBHostTasks( BYTE DeviceNumber )
                     // of the descriptor and the max packet size, so we can allocate
                     // a large enough buffer for getting the whole thing and enough
                     // buffer space for each piece.
+
+					portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddress = 0;
+
                     switch (portdeviceInfo[DeviceNumber].state & SUBSUBSTATE_MASK)
                     {	
                         case SUBSUBSTATE_SEND_GET_DEVICE_DESCRIPTOR_SIZE:
@@ -1737,6 +1742,23 @@ void USBHostTasks( BYTE DeviceNumber )
 							{
 								freez ( portdeviceInfo[DeviceNumber].pDeviceDescriptor );
 							}
+							// MODIFICATION Moved fron case SUBSTATE_SETTLE
+							// Prepare a data buffer for us to use.  We'll make it 8 bytes for now,
+                            // which is the minimum wMaxPacketSize for EP0.
+                            
+							if (pEP0Data != NULL)
+                            {
+                                freez( pEP0Data );
+                            }
+                            if ((pEP0Data = (BYTE *)malloc( 8 )) == NULL)
+                            {
+                                #ifdef DEBUG_MODE
+                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data\r\n" );
+                                #endif
+                                _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
+                                _USB_Port_SetHoldState(DeviceNumber);
+                                break;
+                            }
 
                             pEP0Data[0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
                             pEP0Data[1] = USB_REQUEST_GET_DESCRIPTOR;
@@ -1783,6 +1805,7 @@ void USBHostTasks( BYTE DeviceNumber )
 
                         case SUBSUBSTATE_GET_DEVICE_DESCRIPTOR_SIZE_COMPLETE:
                             // Allocate a buffer for the entire Device Descriptor
+							DBPRINTF("bDeviceClass = %x\n", pEP0Data[4]);
                             if ((portdeviceInfo[DeviceNumber].pDeviceDescriptor = (BYTE *)malloc( *pEP0Data )) == NULL)
                             {
 							//	DBPRINTF("\nCheck po %x %x\n",*pEP0Data, portdeviceInfo[DeviceNumber].pDeviceDescriptor);
@@ -1791,7 +1814,6 @@ void USBHostTasks( BYTE DeviceNumber )
                                 _USB_Port_SetHoldState(DeviceNumber);
                                 break;
                             }
-						//	DBPRINTF("\nCheck lang %p %x \n", *pEP0Data, portdeviceInfo[DeviceNumber].pDeviceDescriptor);
 							pDeviceDescriptor = portdeviceInfo[DeviceNumber].pDeviceDescriptor;
                             // Save the descriptor size in the descriptor (bLength)
                             *pDeviceDescriptor = *pEP0Data;
@@ -1801,7 +1823,7 @@ void USBHostTasks( BYTE DeviceNumber )
 
                             // Make our pEP0Data buffer the size of the max packet.
                             freez( pEP0Data );
-                            if ((pEP0Data = (BYTE *)malloc( usbDeviceInfo.pEndpoint0->wMaxPacketSize )) == NULL)
+							if ((pEP0Data = (BYTE *)malloc( usbDeviceInfo.pEndpoint0->wMaxPacketSize )) == NULL)
                             {
                                 // We cannot continue.  Freeze until the device is removed.
                                 #ifdef DEBUG_MODE
@@ -1862,8 +1884,8 @@ void USBHostTasks( BYTE DeviceNumber )
                             break;
 
                         case SUBSUBSTATE_GET_DEVICE_DESCRIPTOR_COMPLETE:
-							//DBPRINTF("\nCheck lang %x %x",portdeviceInfo[DeviceNumber].pDeviceDescriptor,pDeviceDescriptor);
-
+						
+                            DBPRINTF("bDeviceClass = %x \n", pDeviceDescriptor[4]);
                             // Clean up and advance to the next substate.
                             _USB_InitErrorCounters();
                             _USB_Port_SetNextSubState(DeviceNumber);
@@ -1969,8 +1991,8 @@ void USBHostTasks( BYTE DeviceNumber )
 					while (portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList != NULL)
                     {
                         pTemp = (BYTE *)portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->next;
-                        freez( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor );
-                        freez( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList );
+                        free( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor );
+                        free( portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList );
                         portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList = (USB_CONFIGURATION *)pTemp;
                     }
                     _USB_Port_SetNextSubState(DeviceNumber);
@@ -2016,7 +2038,8 @@ void USBHostTasks( BYTE DeviceNumber )
                             break;
 
                         case SUBSUBSTATE_GET_CONFIG_DESCRIPTOR_SIZECOMPLETE:
-							DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
+
+		//					DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
 
                             // Allocate a buffer for an entry in the configuration descriptor list.
                             if ((pTemp = (BYTE *)malloc( sizeof (USB_CONFIGURATION) )) == NULL)
@@ -2026,7 +2049,7 @@ void USBHostTasks( BYTE DeviceNumber )
                                 _USB_Port_SetHoldState(DeviceNumber);
                                 break;
                             }
-							DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
+		//					DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
 
                             // Allocate a buffer for the entire Configuration Descriptor
                             if ((((USB_CONFIGURATION *)pTemp)->descriptor = (BYTE *)malloc( ((WORD)pEP0Data[3] << 8) + (WORD)pEP0Data[2] )) == NULL)
@@ -3003,9 +3026,16 @@ BOOL _USB_FindDeviceLevelClientDriver( BYTE DeviceNumber )
     USB_DEVICE_DESCRIPTOR *pDesc = (USB_DEVICE_DESCRIPTOR *)pDeviceDescriptor;
 
     // Scan TPL
-    i = 0;
+	i = 0;
     portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfUseDeviceClientDriver = 0;
-    while (i < NUM_TPL_ENTRIES)
+    // MODIFICATION if device is connected to hub
+    if ( (DeviceNumber!= 0) && (DeviceNumber < USB_MAX_DEVICES) ) {
+		i=1; 
+	}
+	DBPRINTF("\nbDeviceClass = %x, bDeviceSubClass = %x, bDeviceProtocol = %x\n", pDesc->bDeviceClass,pDesc->bDeviceSubClass, pDesc->bDeviceProtocol); 
+	DBPRINTF("idVendor = %x, idProduct = %x\n", pDesc->idVendor,pDesc->idProduct); 
+
+	while (i < NUM_TPL_ENTRIES)
     {
         if (usbTPL[i].flags.bfIsClassDriver)
         {
