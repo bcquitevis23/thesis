@@ -172,7 +172,7 @@ static volatile WORD                 numTimerInterrupts;                        
 static volatile USB_ENDPOINT_INFO   *pCurrentEndpoint;                           // Pointer to the endpoint currently performing a transfer.
 BYTE                                *pCurrentConfigurationDescriptor    = NULL;  // Pointer to the current configuration descriptor of the attached device.
 BYTE                                *pDeviceDescriptor                  = NULL;  // Pointer to the Device Descriptor of the attached device.
-static BYTE                         *pEP0Data                           = NULL;  // A data buffer for use by EP0.
+static BYTE                         *pEP0Data[USB_MAX_DEVICES];  // A data buffer for use by EP0.
 static volatile WORD                 usbHostState;                               // State machine state of the attached device.
 volatile WORD                 usbOverrideHostState;                       // Next state machine state, when set by interrupt processing.
 #ifdef ENABLE_STATE_TRACE   // Debug trace support
@@ -426,7 +426,7 @@ BYTE USBHostDeviceStatus( BYTE DeviceNumber )
     application.
   ***************************************************************************/
 
-BOOL USBHostInit(  unsigned long flags  )
+BOOL USBHostInit(  BYTE DeviceNumber  )
 {
 	BYTE i = 0;
 
@@ -435,9 +435,9 @@ BOOL USBHostInit(  unsigned long flags  )
     // Allocate space for Endpoint 0.  We will initialize it in the state machine,
     // so we can reinitialize when another device connects.  If the Endpoint 0
     // node already exists, free all other allocated memory.
-    if (usbDeviceInfo.pEndpoint0 == NULL)
+    if (portdeviceInfo[DeviceNumber].usbDeviceInfo.pEndpoint0 == NULL)
     {
-        if ((usbDeviceInfo.pEndpoint0 = (USB_ENDPOINT_INFO*)malloc( sizeof(USB_ENDPOINT_INFO) )) == NULL)
+        if ((portdeviceInfo[DeviceNumber].usbDeviceInfo.pEndpoint0 = (USB_ENDPOINT_INFO*)malloc( sizeof(USB_ENDPOINT_INFO) )) == NULL)
         {
             #ifdef DEBUG_MODE
                 UART2PrintString( "HOST: Cannot allocate for endpoint 0.\r\n" );
@@ -445,13 +445,14 @@ BOOL USBHostInit(  unsigned long flags  )
             //return USB_MEMORY_ALLOCATION_ERROR;
             return FALSE;
         }
-        usbDeviceInfo.pEndpoint0->next = NULL;
+        portdeviceInfo[DeviceNumber].usbDeviceInfo.pEndpoint0->next = NULL;
     }
     else
     {
-        _USB_FreeMemory();
+        _USB_FreeMemory(DeviceNumber);
     }
-
+	usbDeviceInfo.pEndpoint0 	=	portdeviceInfo[DeviceNumber].usbDeviceInfo.pEndpoint0;
+	if (DeviceNumber == 0) {
     // Initialize other variables.
     pCurrentEndpoint                        = usbDeviceInfo.pEndpoint0;
 	usbDeviceInfo.deviceAddressAndSpeed		= 0;
@@ -464,7 +465,7 @@ BOOL USBHostInit(  unsigned long flags  )
 		i++;
 	}
     usbRootHubInfo.flags.bPowerGoodPort0    = 1;
-
+	}
     // Initialize event queue
     #if defined( USB_ENABLE_TRANSFER_EVENT )
         StructQueueInit(&usbEventQueue, USB_EVENT_QUEUE_DEPTH);
@@ -760,14 +761,14 @@ BYTE USBHostIssueDeviceRequest( BYTE deviceAddress, BYTE bmRequestType, BYTE bRe
     }
 
     // Set up the control packet.
-    pEP0Data[0] = bmRequestType;
-    pEP0Data[1] = bRequest;
-    pEP0Data[2] = wValue & 0xFF;
-    pEP0Data[3] = (wValue >> 8) & 0xFF;
-    pEP0Data[4] = wIndex & 0xFF;
-    pEP0Data[5] = (wIndex >> 8) & 0xFF;
-    pEP0Data[6] = wLength & 0xFF;
-    pEP0Data[7] = (wLength >> 8) & 0xFF;
+    pEP0Data[DeviceNumber][0] = bmRequestType;
+    pEP0Data[DeviceNumber][1] = bRequest;
+    pEP0Data[DeviceNumber][2] = wValue & 0xFF;
+    pEP0Data[DeviceNumber][3] = (wValue >> 8) & 0xFF;
+    pEP0Data[DeviceNumber][4] = wIndex & 0xFF;
+    pEP0Data[DeviceNumber][5] = (wIndex >> 8) & 0xFF;
+    pEP0Data[DeviceNumber][6] = wLength & 0xFF;
+    pEP0Data[DeviceNumber][7] = (wLength >> 8) & 0xFF;
 
     // Set up the client driver for the event.
     usbDeviceInfo.pEndpoint0->clientDriver = clientDriverID;
@@ -775,12 +776,12 @@ BYTE USBHostIssueDeviceRequest( BYTE deviceAddress, BYTE bmRequestType, BYTE bRe
     if (dataDirection == USB_DEVICE_REQUEST_SET)
     {
         // We are doing a SET command that requires data be sent.
-        _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data,8, data, wLength );
+        _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber],8, data, wLength );
     }
     else
     {
         // We are doing a GET request.
-        _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data, 8, data, wLength );
+        _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, data, wLength );
     }
 
     return USB_SUCCESS;
@@ -1178,7 +1179,7 @@ BYTE USBHostSetNAKTimeout( BYTE deviceAddress, BYTE endpoint, WORD flags, WORD t
     None
   ***************************************************************************/
 
-void USBHostShutdown( void )
+void USBHostShutdown( BYTE DeviceNumber )
 {
     // Shut off the power to the module first, in case we are in an
     // overcurrent situation.
@@ -1226,7 +1227,7 @@ void USBHostShutdown( void )
 
     // Free all extra allocated memory, initialize variables, and reset the
     // state machine.
-    USBHostInit( 0 );
+    USBHostInit( DeviceNumber );
 }
 
 
@@ -1411,10 +1412,10 @@ void USBHostTasks( BYTE DeviceNumber )
                     // We got here either from initialization or from the user
                     // unplugging the device at any point in time.
 
-                    // Turn off the module and free up memory.
-					if (!DeviceNumber)
-	                    USBHostShutdown();
-
+                    //if(!DeviceNumber) {
+					// Turn off the module and free up memory.
+	                USBHostShutdown(DeviceNumber);
+					//}
                     #ifdef DEBUG_MODE
                      //   DBPRINTF( "HOST: Initializing DETACHED state.\r\n" );
                     #endif
@@ -1608,14 +1609,14 @@ void USBHostTasks( BYTE DeviceNumber )
                             /****MODIFICATION MOVED TO SUBSTATE_GET_DESCRIPTOR_SIZE
 							// Prepare a data buffer for us to use.  We'll make it 8 bytes for now,
                             // which is the minimum wMaxPacketSize for EP0.
-                            if (pEP0Data != NULL)
+                            if (pEP0Data[DeviceNumber] != NULL)
                             {
-                                freez( pEP0Data );
+                                freez( pEP0Data[DeviceNumber] );
                             }
-                            if ((pEP0Data = (BYTE *)malloc( 8 )) == NULL)
+                            if ((pEP0Data[DeviceNumber] = (BYTE *)malloc( 8 )) == NULL)
                             {
                                 #ifdef DEBUG_MODE
-                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data\r\n" );
+                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data[DeviceNumber]\r\n" );
                                 #endif
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
@@ -1725,8 +1726,6 @@ void USBHostTasks( BYTE DeviceNumber )
                     // a large enough buffer for getting the whole thing and enough
                     // buffer space for each piece.
 
-					portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddress = 0;
-
                     switch (portdeviceInfo[DeviceNumber].state & SUBSUBSTATE_MASK)
                     {	
                         case SUBSUBSTATE_SEND_GET_DEVICE_DESCRIPTOR_SIZE:
@@ -1746,30 +1745,30 @@ void USBHostTasks( BYTE DeviceNumber )
 							// Prepare a data buffer for us to use.  We'll make it 8 bytes for now,
                             // which is the minimum wMaxPacketSize for EP0.
                             
-							if (pEP0Data != NULL)
+							if (pEP0Data[DeviceNumber] != NULL)
                             {
-                                freez( pEP0Data );
+                                freez( pEP0Data[DeviceNumber] );
                             }
-                            if ((pEP0Data = (BYTE *)malloc( 8 )) == NULL)
+                            if ((pEP0Data[DeviceNumber] = (BYTE *)malloc( 8 )) == NULL)
                             {
                                 #ifdef DEBUG_MODE
-                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data\r\n" );
+                                    DBPRINTF( "HOST: Error alloc-ing pEP0Data[DeviceNumber]\r\n" );
                                 #endif
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
                                 break;
                             }
 
-                            pEP0Data[0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                            pEP0Data[1] = USB_REQUEST_GET_DESCRIPTOR;
-                            pEP0Data[2] = 0; // Index
-                            pEP0Data[3] = USB_DESCRIPTOR_DEVICE; // Type
-                            pEP0Data[4] = 0;
-                            pEP0Data[5] = 0;
-                            pEP0Data[6] = 8;
-                            pEP0Data[7] = 0;
+                            pEP0Data[DeviceNumber][0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                            pEP0Data[DeviceNumber][1] = USB_REQUEST_GET_DESCRIPTOR;
+                            pEP0Data[DeviceNumber][2] = 0; // Index
+                            pEP0Data[DeviceNumber][3] = USB_DESCRIPTOR_DEVICE; // Type
+                            pEP0Data[DeviceNumber][4] = 0;
+                            pEP0Data[DeviceNumber][5] = 0;
+                            pEP0Data[DeviceNumber][6] = 8;
+                            pEP0Data[DeviceNumber][7] = 0;
 
-                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data, 8, pEP0Data, 8 );
+                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, pEP0Data[DeviceNumber], 8 );
                             _USB_Port_SetNextSubSubState(DeviceNumber);
                             break;
 
@@ -1780,7 +1779,7 @@ void USBHostTasks( BYTE DeviceNumber )
                                 {
                                     #ifndef USB_HUB_SUPPORT_INCLUDED
                                         // See if a hub is attached.  Hubs are not supported.
-                                        if (pEP0Data[4] == USB_HUB_CLASSCODE)   // bDeviceClass
+                                        if (pEP0Data[DeviceNumber][4] == USB_HUB_CLASSCODE)   // bDeviceClass
                                         {
                                             _USB_Port_SetErrorCode( USB_HOLDING_UNSUPPORTED_HUB );
                                             _USB_Port_SetHoldState(DeviceNumber);
@@ -1805,10 +1804,10 @@ void USBHostTasks( BYTE DeviceNumber )
 
                         case SUBSUBSTATE_GET_DEVICE_DESCRIPTOR_SIZE_COMPLETE:
                             // Allocate a buffer for the entire Device Descriptor
-							DBPRINTF("bDeviceClass = %x\n", pEP0Data[4]);
-                            if ((portdeviceInfo[DeviceNumber].pDeviceDescriptor = (BYTE *)malloc( *pEP0Data )) == NULL)
+							DBPRINTF("bDeviceClass = %x\n", pEP0Data[DeviceNumber][4]);
+                            if ((portdeviceInfo[DeviceNumber].pDeviceDescriptor = (BYTE *)malloc( *pEP0Data[DeviceNumber] )) == NULL)
                             {
-							//	DBPRINTF("\nCheck po %x %x\n",*pEP0Data, portdeviceInfo[DeviceNumber].pDeviceDescriptor);
+							//	DBPRINTF("\nCheck po %x %x\n",*pEP0Data[DeviceNumber], portdeviceInfo[DeviceNumber].pDeviceDescriptor);
                                 // We cannot continue.  Freeze until the device is removed.
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
@@ -1816,18 +1815,18 @@ void USBHostTasks( BYTE DeviceNumber )
                             }
 							pDeviceDescriptor = portdeviceInfo[DeviceNumber].pDeviceDescriptor;
                             // Save the descriptor size in the descriptor (bLength)
-                            *pDeviceDescriptor = *pEP0Data;
-
+                            pDeviceDescriptor[0] = pEP0Data[DeviceNumber][0];
+						
                             // Set the EP0 packet size.
-                            usbDeviceInfo.pEndpoint0->wMaxPacketSize = ((USB_DEVICE_DESCRIPTOR *)pEP0Data)->bMaxPacketSize0;
+                            usbDeviceInfo.pEndpoint0->wMaxPacketSize = ((USB_DEVICE_DESCRIPTOR *)pEP0Data[DeviceNumber])->bMaxPacketSize0;
 
-                            // Make our pEP0Data buffer the size of the max packet.
-                            freez( pEP0Data );
-							if ((pEP0Data = (BYTE *)malloc( usbDeviceInfo.pEndpoint0->wMaxPacketSize )) == NULL)
+                            // Make our pEP0Data[DeviceNumber] buffer the size of the max packet.
+                            freez( pEP0Data[DeviceNumber] );
+							if ((pEP0Data[DeviceNumber] = (BYTE *)malloc( usbDeviceInfo.pEndpoint0->wMaxPacketSize )) == NULL)
                             {
                                 // We cannot continue.  Freeze until the device is removed.
                                 #ifdef DEBUG_MODE
-                                    UART2PrintString( "HOST: Error re-alloc-ing pEP0Data\r\n" );
+                                    UART2PrintString( "HOST: Error re-alloc-ing pEP0Data[DeviceNumber]\r\n" );
                                 #endif
                                 _USB_Port_SetErrorCode( DeviceNumber, USB_HOLDING_OUT_OF_MEMORY );
                                 _USB_Port_SetHoldState(DeviceNumber);
@@ -1854,15 +1853,15 @@ void USBHostTasks( BYTE DeviceNumber )
                                 break;
 
                             // Set up and send GET DEVICE DESCRIPTOR
-                            pEP0Data[0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                            pEP0Data[1] = USB_REQUEST_GET_DESCRIPTOR;
-                            pEP0Data[2] = 0; // Index
-                            pEP0Data[3] = USB_DESCRIPTOR_DEVICE; // Type
-                            pEP0Data[4] = 0;
-                            pEP0Data[5] = 0;
-                            pEP0Data[6] = *pDeviceDescriptor;
-                            pEP0Data[7] = 0;
-                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data, 8, pDeviceDescriptor, *pDeviceDescriptor  );
+                            pEP0Data[DeviceNumber][0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                            pEP0Data[DeviceNumber][1] = USB_REQUEST_GET_DESCRIPTOR;
+                            pEP0Data[DeviceNumber][2] = 0; // Index
+                            pEP0Data[DeviceNumber][3] = USB_DESCRIPTOR_DEVICE; // Type
+                            pEP0Data[DeviceNumber][4] = 0;
+                            pEP0Data[DeviceNumber][5] = 0;
+                            pEP0Data[DeviceNumber][6] = *pDeviceDescriptor;
+                            pEP0Data[DeviceNumber][7] = 0;
+                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, pDeviceDescriptor, *pDeviceDescriptor  );
                             _USB_Port_SetNextSubSubState(DeviceNumber);
                             break;
 
@@ -1931,15 +1930,15 @@ void USBHostTasks( BYTE DeviceNumber )
                             portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddress = DeviceNumber + 1;
 
                             // Set up and send SET ADDRESS
-                            pEP0Data[0] = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                            pEP0Data[1] = USB_REQUEST_SET_ADDRESS;
-                            pEP0Data[2] = portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddress;
-                            pEP0Data[3] = 0;
-                            pEP0Data[4] = 0;
-                            pEP0Data[5] = 0;
-                            pEP0Data[6] = 0;
-                            pEP0Data[7] = 0;
-                            _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data, 8, NULL, 0 );
+                            pEP0Data[DeviceNumber][0] = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                            pEP0Data[DeviceNumber][1] = USB_REQUEST_SET_ADDRESS;
+                            pEP0Data[DeviceNumber][2] = portdeviceInfo[DeviceNumber].usbDeviceInfo.deviceAddress;
+                            pEP0Data[DeviceNumber][3] = 0;
+                            pEP0Data[DeviceNumber][4] = 0;
+                            pEP0Data[DeviceNumber][5] = 0;
+                            pEP0Data[DeviceNumber][6] = 0;
+                            pEP0Data[DeviceNumber][7] = 0;
+                            _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, NULL, 0 );
                             _USB_Port_SetNextSubSubState(DeviceNumber);
                             break;
 
@@ -2008,15 +2007,15 @@ void USBHostTasks( BYTE DeviceNumber )
                             #endif
 
                             // Set up and send GET CONFIGURATION (n) DESCRIPTOR with a length of 8
-                            pEP0Data[0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                            pEP0Data[1] = USB_REQUEST_GET_DESCRIPTOR;
-                            pEP0Data[2] = portdeviceInfo[DeviceNumber].countConfigurations-1;    // USB 2.0 - range is 0 - count-1
-                            pEP0Data[3] = USB_DESCRIPTOR_CONFIGURATION;
-                            pEP0Data[4] = 0;
-                            pEP0Data[5] = 0;
-                            pEP0Data[6] = 8;
-                            pEP0Data[7] = 0;
-                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data, 8, pEP0Data, 8 );
+                            pEP0Data[DeviceNumber][0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                            pEP0Data[DeviceNumber][1] = USB_REQUEST_GET_DESCRIPTOR;
+                            pEP0Data[DeviceNumber][2] = portdeviceInfo[DeviceNumber].countConfigurations-1;    // USB 2.0 - range is 0 - count-1
+                            pEP0Data[DeviceNumber][3] = USB_DESCRIPTOR_CONFIGURATION;
+                            pEP0Data[DeviceNumber][4] = 0;
+                            pEP0Data[DeviceNumber][5] = 0;
+                            pEP0Data[DeviceNumber][6] = 8;
+                            pEP0Data[DeviceNumber][7] = 0;
+                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, pEP0Data[DeviceNumber], 8 );
                             _USB_Port_SetNextSubSubState(DeviceNumber);
                             break;
 
@@ -2052,7 +2051,7 @@ void USBHostTasks( BYTE DeviceNumber )
 		//					DBPRINTF("pTemp = %x\tsizeof(USB_CONFIGURATION) = %i\n", pTemp, sizeof(USB_CONFIGURATION));
 
                             // Allocate a buffer for the entire Configuration Descriptor
-                            if ((((USB_CONFIGURATION *)pTemp)->descriptor = (BYTE *)malloc( ((WORD)pEP0Data[3] << 8) + (WORD)pEP0Data[2] )) == NULL)
+                            if ((((USB_CONFIGURATION *)pTemp)->descriptor = (BYTE *)malloc( ((WORD)pEP0Data[DeviceNumber][3] << 8) + (WORD)pEP0Data[DeviceNumber][2] )) == NULL)
                             {
                                 // Not enough memory for the descriptor!
                                 freez( pTemp );
@@ -2065,7 +2064,7 @@ void USBHostTasks( BYTE DeviceNumber )
 
                             // Save wTotalLength
                             ((USB_CONFIGURATION_DESCRIPTOR *)((USB_CONFIGURATION *)pTemp)->descriptor)->wTotalLength =
-                                    ((WORD)pEP0Data[3] << 8) + (WORD)pEP0Data[2];
+                                    ((WORD)pEP0Data[DeviceNumber][3] << 8) + (WORD)pEP0Data[DeviceNumber][2];
 
                             // Put the new node at the front of the list.
                             ((USB_CONFIGURATION *)pTemp)->next = portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList;
@@ -2096,15 +2095,15 @@ void USBHostTasks( BYTE DeviceNumber )
                             #endif
 
                             // Set up and send GET CONFIGURATION (n) DESCRIPTOR.
-                            pEP0Data[0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                            pEP0Data[1] = USB_REQUEST_GET_DESCRIPTOR;
-                            pEP0Data[2] = portdeviceInfo[DeviceNumber].countConfigurations-1;
-                            pEP0Data[3] = USB_DESCRIPTOR_CONFIGURATION;
-                            pEP0Data[4] = 0;
-                            pEP0Data[5] = 0;
-                            pEP0Data[6] = portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor[2];    // wTotalLength
-                            pEP0Data[7] = portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor[3];
-                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data, 8, portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor,
+                            pEP0Data[DeviceNumber][0] = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                            pEP0Data[DeviceNumber][1] = USB_REQUEST_GET_DESCRIPTOR;
+                            pEP0Data[DeviceNumber][2] = portdeviceInfo[DeviceNumber].countConfigurations-1;
+                            pEP0Data[DeviceNumber][3] = USB_DESCRIPTOR_CONFIGURATION;
+                            pEP0Data[DeviceNumber][4] = 0;
+                            pEP0Data[DeviceNumber][5] = 0;
+                            pEP0Data[DeviceNumber][6] = portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor[2];    // wTotalLength
+                            pEP0Data[DeviceNumber][7] = portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor[3];
+                            _USB_InitControlRead( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor,
                                     ((USB_CONFIGURATION_DESCRIPTOR *)portdeviceInfo[DeviceNumber].usbDeviceInfo.pConfigurationDescriptorList->descriptor)->wTotalLength );
                             _USB_Port_SetNextSubSubState(DeviceNumber);
                             break;
@@ -2233,22 +2232,22 @@ void USBHostTasks( BYTE DeviceNumber )
                                 portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfConfiguredOTG = 1;
 
                                 // Send SET FEATURE
-                                pEP0Data[0] = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                                pEP0Data[1] = USB_REQUEST_SET_FEATURE;
+                                pEP0Data[DeviceNumber][0] = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                                pEP0Data[DeviceNumber][1] = USB_REQUEST_SET_FEATURE;
                                 if (portdeviceInfo[DeviceNumber].usbDeviceInfo.flags.bfAllowHNP) // Needs to be set by the user
                                 {
-                                    pEP0Data[2] = OTG_FEATURE_B_HNP_ENABLE;
+                                    pEP0Data[DeviceNumber][2] = OTG_FEATURE_B_HNP_ENABLE;
                                 }
                                 else
                                 {
-                                    pEP0Data[2] = OTG_FEATURE_A_HNP_SUPPORT;
+                                    pEP0Data[DeviceNumber][2] = OTG_FEATURE_A_HNP_SUPPORT;
                                 }
-                                pEP0Data[3] = 0;
-                                pEP0Data[4] = 0;
-                                pEP0Data[5] = 0;
-                                pEP0Data[6] = 0;
-                                pEP0Data[7] = 0;
-                                _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data, 8, NULL, 0 );
+                                pEP0Data[DeviceNumber][3] = 0;
+                                pEP0Data[DeviceNumber][4] = 0;
+                                pEP0Data[DeviceNumber][5] = 0;
+                                pEP0Data[DeviceNumber][6] = 0;
+                                pEP0Data[DeviceNumber][7] = 0;
+                                _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, NULL, 0 );
                                 _USB_Port_SetNextSubSubState(DeviceNumber);
                             }
                             else
@@ -2325,15 +2324,15 @@ void USBHostTasks( BYTE DeviceNumber )
                             #endif
 
                             // Set up and send SET CONFIGURATION.
-                            pEP0Data[0] = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
-                            pEP0Data[1] = USB_REQUEST_SET_CONFIGURATION;
-                            pEP0Data[2] = portdeviceInfo[DeviceNumber].usbDeviceInfo.currentConfiguration;
-                            pEP0Data[3] = 0;
-                            pEP0Data[4] = 0;
-                            pEP0Data[5] = 0;
-                            pEP0Data[6] = 0;
-                            pEP0Data[7] = 0;
-                            _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data, 8, NULL, 0 );
+                            pEP0Data[DeviceNumber][0] = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;
+                            pEP0Data[DeviceNumber][1] = USB_REQUEST_SET_CONFIGURATION;
+                            pEP0Data[DeviceNumber][2] = portdeviceInfo[DeviceNumber].usbDeviceInfo.currentConfiguration;
+                            pEP0Data[DeviceNumber][3] = 0;
+                            pEP0Data[DeviceNumber][4] = 0;
+                            pEP0Data[DeviceNumber][5] = 0;
+                            pEP0Data[DeviceNumber][6] = 0;
+                            pEP0Data[DeviceNumber][7] = 0;
+                            _USB_InitControlWrite( usbDeviceInfo.pEndpoint0, pEP0Data[DeviceNumber], 8, NULL, 0 );
                             _USB_Port_SetNextSubSubState(DeviceNumber);
                             break;
 
@@ -2735,7 +2734,7 @@ BYTE  USBHostVbusEvent(USB_EVENT vbusEvent, BYTE hubAddress, BYTE portNumber)
     {
         if (vbusEvent == EVENT_VBUS_OVERCURRENT)
         {
-            USBHostShutdown();
+            USBHostShutdown(0);
             usbRootHubInfo.flags.bPowerGoodPort0 = 0;
             return USB_SUCCESS;
         }
@@ -4302,7 +4301,7 @@ void _USB_FreeConfigMemory( BYTE DeviceNumber )
         portdeviceInfo[DeviceNumber].usbDeviceInfo.pInterfaceList = pTempInterface;
     }
 
-    pCurrentEndpoint = usbDeviceInfo.pEndpoint0;
+    pCurrentEndpoint = portdeviceInfo[DeviceNumber].usbDeviceInfo.pEndpoint0;
 
 } // _USB_FreeConfigMemory
 
@@ -4328,7 +4327,7 @@ void _USB_FreeConfigMemory( BYTE DeviceNumber )
     None
   ***************************************************************************/
 
-void _USB_FreeMemory( void )
+void _USB_FreeMemory( BYTE DeviceNumber )
 {
     BYTE    *pTemp;
 
@@ -4343,12 +4342,12 @@ void _USB_FreeMemory( void )
     {
         freez( pDeviceDescriptor );
     }
-    if (pEP0Data != NULL)
+    if (pEP0Data[DeviceNumber] != NULL)
     {
-        freez( pEP0Data );
+        freez( pEP0Data[DeviceNumber] );
     }
 
-    _USB_FreeConfigMemory(0);
+    _USB_FreeConfigMemory(DeviceNumber);
 
 }
 
@@ -5565,7 +5564,7 @@ void _USB1Interrupt( void )
     if ((U1IEbits.TRNIE && U1IRbits.TRNIF) &&
         (!(U1IEbits.UERRIE && U1IRbits.UERRIF) || (pCurrentEndpoint->bmAttributes.bfTransferType == USB_TRANSFER_TYPE_ISOCHRONOUS)))
     {
-        #if defined(__C30__)
+		#if defined(__C30__)
             U1STATBITS          copyU1STATbits;
         #elif defined(__PIC32MX__)
             __U1STATbits_t      copyU1STATbits;
@@ -5820,8 +5819,7 @@ void _USB1Interrupt( void )
             // We have a mismatch between the endpoint we were expecting and the one that we got.
             // The user may be trying to select a new configuration.  Discard the transaction.
         }
-
-        _USB_FindNextToken();
+		_USB_FindNextToken();
     } // U1IRbits.TRNIF
 
 
