@@ -112,11 +112,14 @@
 
 #endif
     
-BOOL HubAttached;  // if hub device is attached
+BOOL HubAttached;  // flag if hub device is attached
 BYTE DeviceNumber;  
 USB_EVENT event;
 BYTE HubStatus;
 BYTE driveNumber;
+BYTE MSDAttached, MSD1Attached, MSD2Attached, MSD3Attached, MSD4Attached;	// MSD Device attached flag
+BYTE MSD1Mounted, MSD2Mounted, MSD3Mounted, MSD4Mounted; // MSD Mount flag
+BYTE deviceAddress;
 
 #define USB_MAX_DEVICES 5
 #define MAX_ALLOWED_CURRENT	(500)
@@ -148,7 +151,17 @@ int main(void)
 
     #endif
 
+	// Initialize variables
     HubAttached = FALSE;
+	MSD1Attached = 0;
+	MSD2Attached = 0;
+	MSD3Attached = 0;
+	MSD4Attached = 0;
+	MSDAttached = 0;
+	MSD1Mounted = 0;
+	MSD2Mounted = 0;
+	MSD3Mounted = 0;
+	MSD4Mounted = 0;
     
     //Initialize the stack
     USBInitialize(0);
@@ -187,23 +200,66 @@ int main(void)
                 //Just sit here until the device is removed.
                 while(HubAttached == TRUE) {
                     USBTasks(DeviceNumber);
-					for (DeviceNumber = 1; DeviceNumber < USB_MAX_DEVICES ; DeviceNumber++) {
+					if (MSDAttached) {
+					for (DeviceNumber = 1; DeviceNumber < USB_MAX_DEVICES; DeviceNumber ++) {
 						driveNumber = DeviceNumber - 1;
-						if (USBHostMSDSCSIMediaDetect(driveNumber)) {
-							DBPRINTF("MSD Device Detected: Device Number = %x\n", DeviceNumber);
-							f_mount(driveNumber, &fatfs[driveNumber]);
-							if (res = FR_OK) {
-  							DBPRINTF("MSD Device Mounted: DriveNumber = %x", driveNumber);
-							}
-							}
-					}		
-								DeviceNumber = 0;						
-					
-				}
-        } 
+
+						if (DeviceNumber == 1) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD1Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x\n", DeviceNumber);
+						res = f_mount(driveNumber, &fatfs[driveNumber]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", driveNumber);
+							} // if res
+						MSD1Mounted = 1;
+						MSD1Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 1
+
+						else if (DeviceNumber == 2) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD2Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x\n", DeviceNumber);
+						res = f_mount(driveNumber, &fatfs[driveNumber]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", driveNumber);
+							} // if res
+						MSD2Mounted = 1;
+						MSD2Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 2
+
+						else if (DeviceNumber == 3) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD3Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x\n", DeviceNumber);
+						res = f_mount(driveNumber, &fatfs[driveNumber]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", driveNumber);
+							} // if res
+						MSD3Mounted = 1;
+						MSD3Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 3
+
+						else if (DeviceNumber == 4) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD4Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x\n", DeviceNumber);
+						res = f_mount(driveNumber, &fatfs[driveNumber]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", driveNumber);
+							} // if res
+						MSD4Mounted = 1;
+						MSD4Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 4
+
+					} // for DeviceNumber
+					DeviceNumber = 0;
+					}
+				} // while HubAttached
+        } // while USBHostHubDeviceDetect 
     return 0;
-}
-}
+} // while (1)
+} // main
 
 
 /****************************************************************************
@@ -272,6 +328,18 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
             HubAttached = TRUE;
             return TRUE;
             break;
+
+		case EVENT_ATTACH:
+			// USB device is attached
+			MSDAttached = 1;
+			return TRUE;
+			break;
+
+		case EVENT_DETACH:
+			// USB device is detached
+			DBPRINTF("MSD Device at %x Detached\n", DeviceNumber);
+			return TRUE;
+			break;
 
         case EVENT_UNSUPPORTED_DEVICE:
             return TRUE;
