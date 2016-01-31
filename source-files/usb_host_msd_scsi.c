@@ -29,8 +29,8 @@ Company:         Microchip Technology, Inc.
 Software License Agreement
 
 The software supplied herewith by Microchip Technology Incorporated
-(the Company) for its PICmicro® Microcontroller is intended and
-supplied to you, the Companys customer, for use solely and
+(the ?Company?) for its PICmicro® Microcontroller is intended and
+supplied to you, the Company?s customer, for use solely and
 exclusively on Microchip PICmicro Microcontroller products. The
 software is owned by the Company and/or its supplier, and is
 protected under applicable copyright laws. All rights are reserved.
@@ -39,7 +39,7 @@ user to criminal sanctions under applicable laws, as well as to
 civil liability for the breach of the terms and conditions of this
 license.
 
-THIS SOFTWARE IS PROVIDED IN AN AS IS CONDITION. NO WARRANTIES,
+THIS SOFTWARE IS PROVIDED IN AN ?AS IS? CONDITION. NO WARRANTIES,
 WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
 TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
 PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
@@ -58,11 +58,13 @@ Change History:
 #include "GenericTypeDefs.h"
 #include "HardwareProfile.h"
 #include "FSconfig.h"
-#include "MDD File System\FSDefs.h"
-#include "MDD File System\FSIO.h"
+//#include "MDD File System\FSDefs.h"
+//#include "MDD File System\FSIO.h"
 #include "USB\usb.h"
 #include "USB\usb_host_msd.h"
 #include "USB\usb_host_msd_scsi.h"
+#include "USB\usb_host.h"
+#include "usb_host_hub.h"
 
 //#define DEBUG_MODE
 #if defined(DEBUG_MODE)
@@ -482,7 +484,7 @@ BYTE USBHostMSDSCSIMediaReset( BYTE driveNumber  )
 
     do
     {
-        USBTasks(deviceAddress[driveNumber]); // MODIFICATION 1/12/2016
+        USBTasks(driveNumber); // MODIFICATION 1/12/2016
         errorCode = USBHostMSDDeviceStatus( deviceAddress[driveNumber] );
     } while (errorCode == USB_MSD_RESETTING_DEVICE);
 
@@ -699,7 +701,7 @@ BYTE USBHostMSDSCSISectorWrite( BYTE driveNumber, DWORD sectorAddress, BYTE *dat
     {
         while (!USBHostMSDTransferIsComplete( deviceAddress[driveNumber], &errorCode, &byteCount ))
         {
-            USBTasks(deviceAddress[driveNumber]);  // MODIFICATION 1/12/2016
+            USBTasks(driveNumber + 1);  // MODIFICATION 1/12/2016
         }
     }
 
@@ -795,7 +797,7 @@ BOOL _USBHostMSDSCSI_TestUnitReady( void )
         {
             while (!USBHostMSDTransferIsComplete( deviceAddress, &errorCode, &byteCount ))
             {
-                USBTasks();
+                USBTasks(deviceAddress - 1);
             }
         }
         #ifdef DEBUG_MODE
@@ -863,16 +865,16 @@ BYTE _USBHostMSDSCSI_Mode_Sense_6( BYTE driveNumber, BYTE pageCode, BYTE subpage
     commandBlock[4] = dataLength;
     commandBlock[5] = 0x00; // Control
     
-    if (driveNumber == 1) {
+    if (driveNumber == 0) {
         errorCode = USBHostMSDRead(2, FIXED_LUN, commandBlock, MODE_SENSE6_CMD_SIZE, data, (DWORD)dataLength);
     }
-    if (driveNumber == 2) {
+    if (driveNumber == 1) {
         errorCode = USBHostMSDRead(3, FIXED_LUN, commandBlock, MODE_SENSE6_CMD_SIZE, data, (DWORD)dataLength);
     }
-    if (driveNumber == 3) {
+    if (driveNumber == 2) {
         errorCode = USBHostMSDRead(4, FIXED_LUN, commandBlock, MODE_SENSE6_CMD_SIZE, data, (DWORD)dataLength);
     }
-    if (driveNumber == 4) {
+    if (driveNumber == 3) {
         errorCode = USBHostMSDRead(5, FIXED_LUN, commandBlock, MODE_SENSE6_CMD_SIZE, data, (DWORD)dataLength);
     }
 #ifdef DEBUG_MODE
@@ -881,20 +883,20 @@ BYTE _USBHostMSDSCSI_Mode_Sense_6( BYTE driveNumber, BYTE pageCode, BYTE subpage
 #endif
   
     if(!errorCode) {
-        while ((!USBHostMSDTransferIsComplete(2, &errorCode, &byteCount) && (driveNumber == 1))) {
+        while ((!USBHostMSDTransferIsComplete(2, &errorCode, &byteCount) && (driveNumber == 0))) {
+            USBTasks(1);
+        }
+        
+        while ((!USBHostMSDTransferIsComplete(3, &errorCode, &byteCount) && (driveNumber == 1))) {
             USBTasks(2);
         }
         
-        while ((!USBHostMSDTransferIsComplete(3, &errorCode, &byteCount) && (driveNumber == 2))) {
+        while ((!USBHostMSDTransferIsComplete(4, &errorCode, &byteCount) && (driveNumber == 2))) {
             USBTasks(3);
         }
         
-        while ((!USBHostMSDTransferIsComplete(4, &errorCode, &byteCount) && (driveNumber == 3))) {
+        while ((!USBHostMSDTransferIsComplete(5, &errorCode, &byteCount) && (driveNumber == 3))) {
             USBTasks(4);
-        }
-        
-        while ((!USBHostMSDTransferIsComplete(5, &errorCode, &byteCount) && (driveNumber == 4))) {
-            USBTasks(5);
         }
     }
     return errorCode;
