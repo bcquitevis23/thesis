@@ -8,9 +8,7 @@
  				platforms.
  Complier:  	Microchip C18 (for PIC18), C30 (for PIC24), C32 (for PIC32)
  Company:		Microchip Technology, Inc.
-
  Software License Agreement:
-
  The software supplied herewith by Microchip Technology Incorporated
  (the “Company”) for its PIC® Microcontroller is intended and
  supplied to you, the Company’s customer, for use solely and
@@ -21,17 +19,14 @@
  user to criminal sanctions under applicable laws, as well as to
  civil liability for the breach of the terms and conditions of this
  license.
-
  THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
  WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
  TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
  PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
  IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
  CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
-
 ********************************************************************
  File Description:
-
  Change History:
   Rev   Description
   1.0   Initial release
@@ -41,7 +36,6 @@
 #include "USB/usb.h"
 #include "USB/usb_host_msd.h"
 #include "USB/usb_host_msd_scsi.h"
-#include "MDD File System/FSIO.h"
 #include "usb_host_hub.h"
 #include "fatfs/ff.h"
 
@@ -55,6 +49,7 @@
 #ifdef __C30__
     #define PLL_96MHZ_OFF   0xFFFF
     #define PLL_96MHZ_ON    0xF7FF
+
 
     // Configuration Bit settings  for an Explorer 16 with USB PICtail Plus
     //      Primary Oscillator:             HS
@@ -112,22 +107,25 @@
 
 #else
 
+
     #error Cannot define configuration bits.
 
 #endif
-                
-volatile BOOL HubAttached;  // if hub device is attached
+    
+BOOL HubAttached;  // if hub device is attached
 BYTE DeviceNumber;  
 USB_EVENT event;
-BYTE deviceAddress;
 BYTE HubStatus;
+BYTE driveNumber;
 
 #define USB_MAX_DEVICES 5
+#define MAX_ALLOWED_CURRENT	(500)
 
 int main(void)
 {
     
     FATFS fatfs[_VOLUMES];
+	FRESULT res;
     
     #if defined(__PIC32MX__)
         {
@@ -164,79 +162,47 @@ int main(void)
 
         UART2Init();
     #endif
+	mJTAGPortEnable(1);
 
     while(1) {
         
         DBPRINTF("USB FILE TRANSFER HUB\n\n\n");
-        
-        for (DeviceNumber = 0; DeviceNumber<=USB_MAX_DEVICES; DeviceNumber++) {
-        
+
+		DeviceNumber = 0;
+
         //USB stack process function
         USBTasks(DeviceNumber);
-
-        //if hub is plugged in
-        if(USBHostHubDeviceDetect(deviceAddress)) {
-            HubAttached = TRUE;
-            event = EVENT_HUB_ATTACH;
-            DBPRINTF("Hub Device Attached\n\nAddress:\t%x", deviceAddress);
-            DBPRINTF("\nStatus:\t%x", HubStatus);
-                //Just sit here until the device is removed.
-                while(HubAttached == TRUE) {
-                    USBHostHubTasks();
-                }
-            }        
-
+            
         //if no hub and msd devices are plugged in
-        while (!USBHostHubDeviceDetect(deviceAddress) || !USBHostMSDSCSIMediaDetect(DeviceNumber)) {
+        while (!USBHostHubDeviceDetect(1)) {
+		//	DBPRINTF("deviceAddress = %x\n", deviceAddress);
             USBTasks(DeviceNumber);
         } 
-                
-        //if msd device is plugged in
-        if (DeviceNumber == 2 || DeviceNumber == 3 || DeviceNumber == 4 || DeviceNumber == 5) {
-            
-        f_mount(DeviceNumber, &fatfs[DeviceNumber]);
-        
-        FRESULT res;
-        FILINFO fno;
-        DIR dir;
-        char *fn;
-        char filename[] = "text.txt";
-        
-    #if _USE_LFN
-    static char lfn[_MAX_LFN * (_DF1S ? 2 : 1) + 1];
-    fno.lfname = lfn;
-    fno.lfsize = sizeof(lfn);
-    #endif
 
-        FIL fp;
-        res = f_open(&fp,filename, FA_CREATE_ALWAYS | FA_WRITE);
-        res = f_puts("Hello World!\n\n", &fp);
-        res = f_opendir(&dir, "");
-        
-        if(res = FR_OK) {
-            for(;;) {
-                res = f_readdir(&dir, &fno);
-                if (res != FR_OK || fno.fname[0] == 0) break;
-                if (fno.fname[0] == '.') continue;
-#if _USE_LFN
-            fn = *fno.lfname ? fno.lfname : fno.fname;
-#else
-            fn = fno.fname;
-#endif 
-            if (fno.fattrib & AM_DIR) {
-                res = f_puts("\nDIR ", &fp);
-            }
-            else {
-                res = f_puts("\nFIL ", &fp);
-            }
-            res = f_puts(fn, &fp);
-            }
-        }
-        res = f_close(&fp);
-        }
-        }
-    }
+        //if hub is plugged in
+        if(USBHostHubDeviceDetect(1)) {
+            HubAttached = TRUE;
+            event = EVENT_HUB_ATTACH;
+            DBPRINTF("Hub Device Attached\n");
+                //Just sit here until the device is removed.
+                while(HubAttached == TRUE) {
+                    USBTasks(DeviceNumber);
+					for (DeviceNumber = 1; DeviceNumber < USB_MAX_DEVICES ; DeviceNumber++) {
+						driveNumber = DeviceNumber - 1;
+						if (USBHostMSDSCSIMediaDetect(driveNumber)) {
+							DBPRINTF("MSD Device Detected: Device Number = %x\n", DeviceNumber);
+							f_mount(driveNumber, &fatfs[driveNumber]);
+							if (res = FR_OK) {
+  							DBPRINTF("MSD Device Mounted: DriveNumber = %x", driveNumber);
+							}
+							}
+					}		
+								DeviceNumber = 0;						
+					
+				}
+        } 
     return 0;
+}
 }
 
 
@@ -284,6 +250,14 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
             // The data pointer points to a byte that represents the amount of power
             // requested in mA, divided by two.  If the device wants too much power,
             // we reject it.
+			if (((USB_VBUS_POWER_EVENT_DATA*)data)->current <= (MAX_ALLOWED_CURRENT / 2))
+            {
+                return TRUE;
+            }
+            else
+            {
+                DBPRINTF( "\n***** USB Error - device requires too much current *****\n" );
+            }
             return TRUE;
 
         case EVENT_VBUS_RELEASE_POWER:
@@ -328,4 +302,18 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
     }
 
     return FALSE;
+}
+
+static unsigned int _excep_code; 
+static unsigned int _excep_addr; 
+// this function overrides the normal _weak_ generic handler 
+void _general_exception_handler(void) 
+{ 
+ unsigned int mod_addr; 
+ asm volatile("mfc0 %0,$13" : "=r" (_excep_code)); 
+ asm volatile("mfc0 %0,$14" : "=r" (_excep_addr)); 
+ // Skip instruction causing the exception 
+ _excep_code = (_excep_code & 0x0000007C) >> 2; 
+ mod_addr = _excep_addr + 4; 
+ asm volatile("mtc0 %0,$14" :: "r" (mod_addr)); 
 }
