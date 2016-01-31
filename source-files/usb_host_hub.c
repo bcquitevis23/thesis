@@ -37,6 +37,8 @@ Change History:
 #include "HardwareProfile.h"
 #include "USB\usb.h"
 #include "usb_host_hub.h"
+#include "usb\usb_host_msd.h"
+#include "usb\usb_host_msd_scsi.h"
 //#include "USB\usb_host_hub_port.h"
 
 // *****************************************************************************
@@ -1291,7 +1293,7 @@ void USBPortInitialize( void )
 							break;
 					}
 					deviceInfoHub[i].StatusChange[0] = 0;
-					DBPRINTF("Device connected to port #%x\n", CurrentPort);
+					//DBPRINTF("Device connected to port #%x\n", CurrentPort);
 					_USB_HostHubPort_SetNextState();
 					break;
 				}
@@ -1658,7 +1660,7 @@ void USBPortInitialize( void )
 					
 				case SUBSTATE_DETERMINE_DOWNSTREAM_SPEED:
 					// Check bit 9 of wPortStatus for port speed
-					DBPRINTF("Device Speed = %x\n", ((USB_PORT_STATUS *)pStat)->wPortStatus_Hi);
+					//DBPRINTF("Device Speed = %x\n", ((USB_PORT_STATUS *)pStat)->wPortStatus_Hi);
 					if (( ((USB_PORT_STATUS *)pStat)->wPortStatus_Hi)&0x02)
 					{
 						// Device is High Speed
@@ -1676,7 +1678,7 @@ void USBPortInitialize( void )
 					((USB_HUB_DEVICE *)pHubDevice)->bPortNumber[DevAddr] = CurrentPort;		// Save port number used in this address
 					((USB_HUB_DEVICE *)pHubDevice)->bPortPresent[DevAddr] = 1;				// set USB device present on this address
 					StatChangeIndicator = 0;
-					// insert event here
+					USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_ATTACH, NULL, 0);
 					DBPRINTF("\nPort Initialized\n");
 					break;
 			}
@@ -1853,13 +1855,14 @@ void USBPortInitialize( void )
 					}
 					if(DevAddr)
 					{
+						USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_DETACH, &DevAddr, sizeof(BYTE));
+						USBHostMSDEventHandler( DevAddr, EVENT_DETACH, NULL, 0 );
 						((USB_HUB_DEVICE *)pHubDevice)->bPortPresent[DevAddr] = 0;
 						((USB_HUB_DEVICE *)pHubDevice)->bPortNumber[DevAddr] = 0;
 					}
 					StatChangeIndicator = 0;
 					// Insert Event here
-					//USBHostDetachDevice(DevAddr);
-					DBPRINTF("\nDevice Disconnected\n");
+					DBPRINTF("\nDevice Disconnected in port %x\n", CurrentPort);
 					break;
 			}
 			break;
@@ -2220,6 +2223,38 @@ void _USBHostHub_ResetStateJump( BYTE i )
 
         deviceInfoHub[i].state = deviceInfoHub[i].returnState;
     }
+}
+
+
+/****************************************************************************
+  Function:
+    BYTE USBReturnCurrentPort( BYTE CurrentPort )
+
+  Summary:
+    This function returns the port number of the device.
+
+  Description:
+    This function returns the port number of the device to be called for USBHostHubDeviceDetect().
+
+  Precondition:
+    None
+
+  Parameters:
+    BYTE CurrentPort  - Port number of the device currently being configured
+
+  Return Values:
+	DeviceNumber - Port number of the device    
+
+  Remarks:
+    None
+  ***************************************************************************/
+
+BYTE USBReturnCurrentPort ( BYTE CurrentPort ) {
+
+	BYTE DeviceNumber;
+	DeviceNumber = CurrentPort;
+	return DeviceNumber;
+
 }
 
 //drm :D
