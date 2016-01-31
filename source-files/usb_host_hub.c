@@ -123,12 +123,12 @@ Currently this must be set to 1, due to limitations in the USB Host layer.
 	#define SUBSUBSTATE_WAIT_FOR_GET_STATUS							0x0001		//
 	#define SUBSUBSTATE_GET_STATUS_COMPLETE							0x0002		//
 
-	#define SUBSTATE_CLEAR_PORT_FEATURE								0x0030		//
+	#define SUBSTATE_CLEAR_PORT_FEATURE								0x0020		//
 	#define SUBSUBSTATE_SEND_CLEAR_PORT_FEATURE						0x0000		//
 	#define SUBSUBSTATE_WAIT_FOR_SEND_CLEAR_PORT_FEATURE			0x0001		//
 	#define SUBSUBSTATE_SEND_CLEAR_PORT_FEATURE_COMPLETE			0x0002		//
 
-	#define SUBSTATE_SET_PORT_FEATURE								0x0020		//
+	#define SUBSTATE_SET_PORT_FEATURE								0x0030		//
 	#define SUBSUBSTATE_SEND_SET_PORT_FEATURE						0x0000		//
 	#define SUBSUBSTATE_WAIT_FOR_SEND_SET_PORT_FEATURE				0x0001		//
 	#define SUBSUBSTATE_SEND_SET_PORT_FEATURE_COMPLETE				0x0002		//
@@ -370,7 +370,6 @@ typedef struct _USB_HUB_DEVICE										// USB Address #0(enum), #1(Hub), #2..#5
 //******************************************************************************
 
 void _USBHostHub_ResetStateJump( BYTE i );
-void _USBHub_ResetStateJump( BYTE i );
 
 //******************************************************************************
 //******************************************************************************
@@ -642,7 +641,7 @@ BOOL USBHostHubInitialize( BYTE address, DWORD flags, BYTE clientDriverID )
 	USB_HUB_INTERFACE_DETAILS	*pNewInterfaceDetails	= NULL;
 
 
-	DBPRINTF( "Hub: USBHubClientInitialize\n" );
+	// DBPRINTF( "Hub: USBHubClientInitialize\n" );
 
 	// Find the free slot in the table.  If we cannot find one, kick off the device.
 	for (device = 0; (device < USB_MAX_HUB_DEVICES) && (deviceInfoHub[device].deviceAddress != 0); device++);
@@ -796,11 +795,7 @@ void USBHostHubTasks( void )
    	{
        	if (deviceInfoHub[i].deviceAddress != 0) /* device address updated by lower layer */
 		{
-
-		DBPRINTF("USBHostHubTasks(deviceAddress = %x,", deviceInfoHub[i].deviceAddress);
-		DBPRINTF(" state = %x,", deviceInfoHub[i].state);
-		DBPRINTF(" port = %x)\n", deviceInfoHub[i].port);
-      		
+		
 			switch (deviceInfoHub[i].state & STATE_MASK)
 			{
       			case STATE_DETACHED:
@@ -1056,7 +1051,7 @@ void USBHostHubTasks( void )
 							break;
 
 						case SUBSTATE_GET_PORT_STATUS:
-							switch(deviceInfoHub[i].state & SUBSUBSTATE_MASK)
+								switch(deviceInfoHub[i].state & SUBSUBSTATE_MASK)
 							{
 								case SUBSUBSTATE_SEND_GET_PORT_STATUS:
 									// Send get port status on each port
@@ -1075,7 +1070,12 @@ void USBHostHubTasks( void )
 											deviceInfoHub[i].clientDriverID) )
 									{
 										_USBHostHub_SetNextSubSubState();
-									}
+										//DBPRINTF("Status change endpoint for port %x = %x %x %x %x %x\n", deviceInfoHub[i].port, deviceInfoHub[i].Status[4], deviceInfoHub[i].Status[3], deviceInfoHub[i].Status[2], deviceInfoHub[i].Status[1], deviceInfoHub[i].Status[0]);
+									
+											if (deviceInfoHub[i].Status[0]) {
+										//	DBPRINTF("Device Connected in Port #%x = %x\n", deviceInfoHub[i].port, deviceInfoHub[i].Status[0]);
+										}
+									}	
 									break;
 
 								case SUBSUBSTATE_WAIT_FOR_SEND_GET_PORT_STATUS:
@@ -1112,7 +1112,7 @@ void USBHostHubTasks( void )
 
 						case SUBSTATE_CLEAR_PORT_PRESENT_STATUS:
 
-							if((deviceInfoHub[i].HubDevice = (BYTE *)malloc(pCurrInterfaceDetails->sizeofStatusChangeDesc)) == NULL)
+							if((deviceInfoHub[i].HubDevice = (BYTE *)malloc(sizeof(USB_HUB_DEVICE))) == NULL)
 							{
 								_USBHostHub_LockDevice( USB_MEMORY_ALLOCATION_ERROR );
 								break;
@@ -1131,6 +1131,10 @@ void USBHostHubTasks( void )
 					break;
 	
 				case STATE_RUNNING:
+					//	DBPRINTF("Running State (deviceAddress = %x,", deviceInfoHub[i].deviceAddress);
+					//	DBPRINTF(" state = %x,", deviceInfoHub[i].state);
+					//	DBPRINTF(" port = %x)\n", deviceInfoHub[i].port);
+				      
 					switch (deviceInfoHub[i].state & SUBSTATE_MASK)
 						{
 							case SUBSTATE_HOLDING:
@@ -1144,7 +1148,7 @@ void USBHostHubTasks( void )
 										do
 										{
 											// do port enumeration task
-											USBHostTasks(deviceInfoHub[i].port); // MODIFICATION 1/24/2016 edit later
+											USBHostTasks(deviceInfoHub[i].port);
 											// Ayusin to for error later on
 											if (USBHostDeviceStatus(deviceInfoHub[i].port) == USB_HOLDING_OUT_OF_MEMORY)
 												break;
@@ -1173,7 +1177,7 @@ void USBHostHubTasks( void )
 								{
 									if (errorCode)
 									{
-										DBPRINTF("errorCode2 is = %x\r\n",errorCode);
+									//	DBPRINTF("errorCode2 is = %x\r\n",errorCode);
 										if(USB_ENDPOINT_STALLED == errorCode)
 										{
 											USBHostClearEndpointErrors( deviceInfoHub[i].deviceAddress, deviceInfoHub[i].endpointDATA );
@@ -1190,7 +1194,7 @@ void USBHostHubTasks( void )
 									{
 										// Clear the STALL.  Since it is EP0, we do not have to clear the stall.
 										USBHostClearEndpointErrors( deviceInfoHub[i].deviceAddress, deviceInfoHub[i].endpointDATA );
-										DBPRINTF("\nStatus Change 1 = %x\r\n",(deviceInfoHub[i].StatusChange[0]&0x1F));
+										DBPRINTF("\nHub Status Change 1 = %x\n",(deviceInfoHub[i].StatusChange[0]&0x1F));
 										_USBHostHub_SetNextSubState();
 									}
 								}
@@ -1287,6 +1291,7 @@ void USBPortInitialize( void )
 							break;
 					}
 					deviceInfoHub[i].StatusChange[0] = 0;
+					DBPRINTF("Device connected to port #%x\n", CurrentPort);
 					_USB_HostHubPort_SetNextState();
 					break;
 				}
@@ -1297,6 +1302,7 @@ void USBPortInitialize( void )
 			switch (deviceInfoHub[i].portstate & SUBSTATE_MASK)
 			{
 				case SUBSTATE_SEND_GET_STATUS:
+					// DBPRINTF("SEND GET STATUS REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					// Send get port status request
 					pStat = deviceInfoHub[i].Status;									// keep current wPortStatus & wPortChange
 
@@ -1304,9 +1310,16 @@ void USBPortInitialize( void )
 					if (U1CONbits.TOKBUSY)
 						break;
 					
-					if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-					    USB_REQUEST_GET_STATUS, 0, CurrentPort, 4,
-					    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+					if( !USBHostIssueDeviceRequest( 	// Send GET STATUS Request of current port
+							deviceInfoHub[i].deviceAddress, 
+							USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+					    	USB_REQUEST_GET_STATUS, 
+							0, 
+							CurrentPort, 
+							4,
+					    	deviceInfoHub[i].Status, 
+							USB_DEVICE_REQUEST_GET, 
+							deviceInfoHub[i].clientDriverID) )
 					{
 						_USB_HostHubPort_SetNextSubState();
 					}
@@ -1315,10 +1328,11 @@ void USBPortInitialize( void )
 				case SUBSTATE_WAIT_FOR_SEND_GET_STATUS:
 					if (USBHostTransferIsComplete( deviceInfoHub[i].deviceAddress, 0, &errorCode, &byteCount ))
 					{
-						if(errorCode)
+						if(errorCode != USB_SUCCESS)
 						{
 							/* Set error code */
-							_USBHostHub_LockDevice( errorCode );
+							USBHostClearEndpointErrors( deviceInfoHub[i].deviceAddress, 0 );
+							deviceInfoHub[i].portstate = STATE_GET_INITIAL_STATUS | SUBSTATE_SEND_GET_STATUS;
 						}
 					}
 					else
@@ -1360,6 +1374,7 @@ void USBPortInitialize( void )
 					break;
 
 				case SUBSTATE_CLEAR_C_PORT_CONNECTION:
+					//DBPRINTF("SEND CLEAR C PORT CONNECTION FEATURE REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					switch (deviceInfoHub[i].portstate & SUBSUBSTATE_MASK)
 					{
 						case SUBSUBSTATE_SEND_CLEAR_C_PORT_CONNECTION:
@@ -1368,9 +1383,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_CLEAR_FEATURE, C_PORT_CONNECTION, CurrentPort, 0,
-							    0, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( // Send CLEAR FEATURE C PORT CONNECTION Request
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_CLEAR_FEATURE, 
+									C_PORT_CONNECTION, 
+									CurrentPort, 
+									0,
+							    	0, 
+									USB_DEVICE_REQUEST_SET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1400,6 +1422,7 @@ void USBPortInitialize( void )
 					break;
 
 				case SUBSTATE_CLEAR_FEAT_C_PORT_GET_STATUS:
+					//DBPRINTF("SEND GET STATUS REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					switch (deviceInfoHub[i].portstate & SUBSUBSTATE_MASK)
 					{
 						case SUBSUBSTATE_SEND_CLEAR_FEAT_C_PORT_GET_STATUS:
@@ -1408,9 +1431,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_GET_STATUS, 0, CurrentPort, 0x04,
-							    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )			// baguhin mo ang Status
+							if( !USBHostIssueDeviceRequest( 	// Send GET STATUS Request of current port
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_GET_STATUS, 
+									0, 
+									CurrentPort, 
+									0x04,
+							    	deviceInfoHub[i].Status, 
+									USB_DEVICE_REQUEST_GET, 
+									deviceInfoHub[i].clientDriverID) )			// baguhin mo ang Status
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1436,8 +1466,9 @@ void USBPortInitialize( void )
 						case SUBSUBSTATE_SEND_CLEAR_FEAT_C_PORT_GET_STATUS_COMPLETE:
                             //MODIFICATION (1/7/2016)
 							//if( !((( ((USB_PORT_STATUS *)deviceInfoHub[i].Status))->wPortChange_Lo) && USB_PORT_STAT_C_CONNECTION) )
-							if( !((( ((USB_PORT_STATUS *)deviceInfoHub[i].Status))->wPortChange_Lo) && PORT_CONNECTION) )
-			
+							//DBPRINTF("C_PORT_CONNECTION Status = %x		%x\n", ((USB_PORT_STATUS *)deviceInfoHub[i].Status)->wPortChange_Lo, C_PORT_CONNECTION);
+							if( !((( ((USB_PORT_STATUS *)deviceInfoHub[i].Status))->wPortChange_Lo) && C_PORT_CONNECTION) )
+							// if PORT CONNECTION bit is not set
                             {
 								_USB_HostHubPort_SetNextSubState();
 							}
@@ -1450,6 +1481,7 @@ void USBPortInitialize( void )
 					break;
 
 				case SUBSTATE_SET_FEATURE_PORT_RESET:
+					//DBPRINTF("SEND SET PORT RESET FEATURE REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					switch (deviceInfoHub[i].portstate & SUBSUBSTATE_MASK)
 					{
 						case SUBSUBSTATE_SEND_SET_FEATURE_PORT_RESET:
@@ -1458,9 +1490,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-										  USB_REQUEST_SET_FEATURE, PORT_RESET, CurrentPort, 0,
-									  	  0, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send SET FEATURE PORT RESET Request
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+									USB_REQUEST_SET_FEATURE, 
+									PORT_RESET, 
+									CurrentPort, 
+									0,
+									0, 
+									USB_DEVICE_REQUEST_SET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1480,6 +1519,7 @@ void USBPortInitialize( void )
 					break;
 
 				case SUBSTATE_PORT_RESET_GET_STATUS:
+					//DBPRINTF("SEND GET STATUS REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					switch (deviceInfoHub[i].portstate & SUBSUBSTATE_MASK)
 					{
 						case SUBSUBSTATE_SEND_PORT_RESET_GET_STATUS:
@@ -1488,9 +1528,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_GET_STATUS, 0, CurrentPort, 4,
-							    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send GET STATUS Request on current port
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_GET_STATUS, 
+									0, 
+									CurrentPort, 
+									4,
+							    	deviceInfoHub[i].Status, 
+									USB_DEVICE_REQUEST_GET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1506,7 +1553,9 @@ void USBPortInitialize( void )
 						case SUBSUBSTATE_SEND_PORT_RESET_GET_STATUS_COMPLETE:
 							//MODIFICATIONN(1/7/2016)
                             //if( (( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && USB_PORT_STAT_C_RESET) )
-							if( (( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && PORT_RESET) )
+							//DBPRINTF("PORT RESET Status = %x		%x\n", ((USB_PORT_STATUS *)deviceInfoHub[i].Status)->wPortChange_Lo, C_PORT_RESET);
+							if( (( ((USB_PORT_STATUS *)deviceInfoHub[i].Status)->wPortChange_Lo) && C_PORT_RESET) ) // MODIFICATION 1/25/2016
+							// if port reset bit is set
                             {
 								_USB_HostHubPort_SetNextSubState();
 							}
@@ -1520,6 +1569,7 @@ void USBPortInitialize( void )
 					break;
 
 				case SUBSTATE_CLEAR_FEATURE_C_PORT_RESET:
+					//DBPRINTF("SEND CLEAR C PORT RESET FEATURE REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					switch (deviceInfoHub[i].portstate & SUBSUBSTATE_MASK)
 					{
 						case SUBSUBSTATE_SEND_CLEAR_FEATURE_C_PORT_RESET:
@@ -1528,9 +1578,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_CLEAR_FEATURE, C_PORT_RESET, CurrentPort, 0,
-							    0, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send CLEAR FEATURE C PORT RESET Request
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_CLEAR_FEATURE, 
+									C_PORT_RESET, 
+									CurrentPort, 
+									0,
+							    	0, 
+									USB_DEVICE_REQUEST_SET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1550,6 +1607,7 @@ void USBPortInitialize( void )
 					break;
 
 				case SUBSTATE_C_PORT_RESET_GET_STATUS:
+					//DBPRINTF("SEND GET STATUS REQUEST (state = %x)\n", deviceInfoHub[i].portstate);
 					switch (deviceInfoHub[i].portstate & SUBSUBSTATE_MASK)
 					{
 						case SUBSUBSTATE_SEND_C_PORT_RESET_GET_STATUS:
@@ -1558,9 +1616,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_GET_STATUS, 0, CurrentPort, 4,
-							    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send GET STATUS Request on current port
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_GET_STATUS, 
+									0, 
+									CurrentPort, 
+									4,
+							    	deviceInfoHub[i].Status, 
+									USB_DEVICE_REQUEST_GET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1575,13 +1640,16 @@ void USBPortInitialize( void )
 
 						case SUBSUBSTATE_SEND_C_PORT_RESET_GET_STATUS_COMPLETE:
                             //MODIFICATIONN(1/7/2016)
-                            //if( (( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && USB_PORT_STAT_C_RESET) )
-							if( (( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && PORT_RESET) )
+                            //if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && USB_PORT_STAT_C_RESET) )
+							//DBPRINTF("PORT RESET Status = %x		%x\n", ((USB_PORT_STATUS *)deviceInfoHub[i].Status)->wPortChange_Lo, C_PORT_RESET);							
+							//DBPRINTF("pStat wPortChange_Lo = %x, wPortChange_Hi = %x, wPortStatus_Lo = %x, wPortStatus_Hi = %x\n", ((USB_PORT_STATUS *)pStat)->wPortChange_Lo, ((USB_PORT_STATUS *)pStat)->wPortChange_Hi, ((USB_PORT_STATUS *)pStat)->wPortStatus_Hi, ((USB_PORT_STATUS *)pStat)->wPortStatus_Lo);
+							if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && C_PORT_RESET) )
                             {
 								_USB_HostHubPort_SetNextSubState();
 							}
 							else
 							{
+								deviceInfoHub[i].portstate = STATE_DEVICE_PRESENT | SUBSTATE_CLEAR_FEATURE_C_PORT_RESET | SUBSUBSTATE_SEND_CLEAR_FEATURE_C_PORT_RESET_COMPLETE;
 								_USB_HostHubPort_SetStartingSubSubState();
 							}
 							break;
@@ -1590,6 +1658,7 @@ void USBPortInitialize( void )
 					
 				case SUBSTATE_DETERMINE_DOWNSTREAM_SPEED:
 					// Check bit 9 of wPortStatus for port speed
+					DBPRINTF("Device Speed = %x\n", ((USB_PORT_STATUS *)pStat)->wPortStatus_Hi);
 					if (( ((USB_PORT_STATUS *)pStat)->wPortStatus_Hi)&0x02)
 					{
 						// Device is High Speed
@@ -1608,7 +1677,7 @@ void USBPortInitialize( void )
 					((USB_HUB_DEVICE *)pHubDevice)->bPortPresent[DevAddr] = 1;				// set USB device present on this address
 					StatChangeIndicator = 0;
 					// insert event here
-//					DBPRINTF("\nPort Initialized\n");
+					DBPRINTF("\nPort Initialized\n");
 					break;
 			}
 			break;
@@ -1625,9 +1694,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_CLEAR_FEATURE, C_PORT_CONNECTION, CurrentPort, 0,
-							    0, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send CLEAR FEATURE C PORT CONNECTION Request
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_CLEAR_FEATURE, 
+									C_PORT_CONNECTION, 
+									CurrentPort, 
+									0,
+							    	0, 
+									USB_DEVICE_REQUEST_SET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1650,9 +1726,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_GET_STATUS, 0, CurrentPort, 4,
-							    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( // Send GET STATUS Request on current port
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_GET_STATUS, 
+									0, 
+									CurrentPort, 
+									4,
+							    	deviceInfoHub[i].Status, 
+									USB_DEVICE_REQUEST_GET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1668,7 +1751,7 @@ void USBPortInitialize( void )
 						case SUBSUBSTATE_SEND_GET_PORT_STATUS_COMPLETE_NP:
 							//MODIFICATION(1/7/2016)
                             //if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && USB_PORT_STAT_C_CONNECTION) )
-							if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && PORT_CONNECTION) )
+							if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && C_PORT_CONNECTION) )
 							{
 								_USB_HostHubPort_SetNextSubState();
 							}
@@ -1689,9 +1772,16 @@ void USBPortInitialize( void )
 							if (U1CONbits.TOKBUSY)
 								break;
 							
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_CLEAR_FEATURE, C_PORT_ENABLE, CurrentPort, 0,
-							    0, USB_DEVICE_REQUEST_SET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send CLEAR FEATURE C PORT ENABLE Request
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_CLEAR_FEATURE, 
+									C_PORT_ENABLE, 
+									CurrentPort, 
+									0,
+							    	0, 
+									USB_DEVICE_REQUEST_SET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1713,9 +1803,16 @@ void USBPortInitialize( void )
 							// If we are currently sending a token, we cannot do anything.
 							if (U1CONbits.TOKBUSY)
 								break;
-							if( !USBHostIssueDeviceRequest( deviceInfoHub[i].deviceAddress, USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
-							    USB_REQUEST_GET_STATUS, 0, CurrentPort, 4,
-							    deviceInfoHub[i].Status, USB_DEVICE_REQUEST_GET, deviceInfoHub[i].clientDriverID) )
+							if( !USBHostIssueDeviceRequest( 	// Send GET STATUS Request on current port
+									deviceInfoHub[i].deviceAddress, 
+									USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER,
+							    	USB_REQUEST_GET_STATUS, 
+									0, 
+									CurrentPort, 
+									4,
+							    	deviceInfoHub[i].Status, 
+									USB_DEVICE_REQUEST_GET, 
+									deviceInfoHub[i].clientDriverID) )
 							{
 								_USB_HostHubPort_SetNextSubSubState();
 							}
@@ -1731,7 +1828,7 @@ void USBPortInitialize( void )
 						case SUBSUBSTATE_SEND_GET_PORT_STATUS_COMPLETE_NP2:
 							//MODIFICATION(1/7/2016)
                             //if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && USB_PORT_STAT_C_ENABLE) )
-							if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && PORT_ENABLE) )
+							if( !(( ((USB_PORT_STATUS *)pStat)->wPortChange_Lo) && C_PORT_ENABLE) )
 							{
 								_USB_HostHubPort_SetNextSubState();
 							}
