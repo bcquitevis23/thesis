@@ -1855,7 +1855,7 @@ void USBPortInitialize( void )
 					}
 					if(DevAddr)
 					{
-						USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_DETACH, &DevAddr, sizeof(BYTE));
+						USB_HOST_APP_EVENT_HANDLER(deviceInfoHub[i].deviceAddress, EVENT_DETACH, NULL, 0);
 						USBHostMSDEventHandler( DevAddr, EVENT_DETACH, NULL, 0 );
 						((USB_HUB_DEVICE *)pHubDevice)->bPortPresent[DevAddr] = 0;
 						((USB_HUB_DEVICE *)pHubDevice)->bPortNumber[DevAddr] = 0;
