@@ -22,7 +22,7 @@ DRM          15-Oct-2007 First release
 #define _USB_HOST_HUB_H_
 //DOM-IGNORE-END
 
-
+extern BYTE CurrentPort;
 
 // *****************************************************************************
 // *****************************************************************************
@@ -90,7 +90,6 @@ DRM          15-Oct-2007 First release
     // A device was detached from the hub. The data pointer points to a byte
 	// with the previous address of the detached device.
 #define EVENT_HUB_RESET_ERROR               EVENT_HUB_BASE + EVENT_HUB_OFFSET + 10   
-
 
 
 // *****************************************************************************
@@ -444,6 +443,31 @@ BYTE USBHostHubTransfer( BYTE deviceAddress, BYTE interfaceNum, WORD size, BYTE 
 BOOL USBHostHubTransferIsComplete( BYTE deviceAddress, BYTE *errorCode, BYTE *byteCount );
 
 
+/****************************************************************************
+  Function:
+    BYTE USBReturnCurrentPort( BYTE CurrentPort )
+
+  Summary:
+    This function returns the port number of the device.
+
+  Description:
+    This function returns the port number of the device to be called for USBHostHubDeviceDetect().
+
+  Precondition:
+    None
+
+  Parameters:
+    BYTE CurrentPort  - Port number of the device currently being configured
+
+  Return Values:
+	DeviceNumber - Port number of the device    
+
+  Remarks:
+    None
+  ***************************************************************************/
+
+BYTE USBReturnCurrentPort ( BYTE CurrentPort );
+
 // *****************************************************************************
 // *****************************************************************************
 // Section: Host Stack Interface Functions
@@ -481,6 +505,7 @@ BOOL USBHostHubTransferIsComplete( BYTE deviceAddress, BYTE *errorCode, BYTE *by
 
 
 BOOL USBHostHubEventHandler( BYTE address, USB_EVENT event, void *data, DWORD size );
+
 
 
 
