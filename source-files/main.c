@@ -8,9 +8,7 @@
  				platforms.
  Complier:  	Microchip C18 (for PIC18), C30 (for PIC24), C32 (for PIC32)
  Company:		Microchip Technology, Inc.
-
  Software License Agreement:
-
  The software supplied herewith by Microchip Technology Incorporated
  (the “Company”) for its PIC® Microcontroller is intended and
  supplied to you, the Company’s customer, for use solely and
@@ -21,17 +19,14 @@
  user to criminal sanctions under applicable laws, as well as to
  civil liability for the breach of the terms and conditions of this
  license.
-
  THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
  WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
  TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
  PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
  IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
  CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
-
 ********************************************************************
  File Description:
-
  Change History:
   Rev   Description
   1.0   Initial release
@@ -41,7 +36,6 @@
 #include "USB/usb.h"
 #include "USB/usb_host_msd.h"
 #include "USB/usb_host_msd_scsi.h"
-#include "MDD File System/FSIO.h"
 #include "usb_host_hub.h"
 #include "fatfs/ff.h"
 
@@ -55,6 +49,7 @@
 #ifdef __C30__
     #define PLL_96MHZ_OFF   0xFFFF
     #define PLL_96MHZ_ON    0xF7FF
+
 
     // Configuration Bit settings  for an Explorer 16 with USB PICtail Plus
     //      Primary Oscillator:             HS
@@ -112,23 +107,38 @@
 
 #else
 
+
     #error Cannot define configuration bits.
 
 #endif
-                
-volatile BOOL HubAttached;  // if hub device is attached
+
+
+#define UART_MODULE_ID UART2 // PIM is connected to Explorer through UART2 module
+#define DESIRED_BAUDRATE (9600) //The desired BaudRate
+    
+BOOL HubAttached;  // flag if hub device is attached
 BYTE DeviceNumber;  
 USB_EVENT event;
-BYTE deviceAddress;
 BYTE HubStatus;
+BYTE driveNumber;
+BYTE MSDAttached, MSD1Attached, MSD2Attached, MSD3Attached, MSD4Attached;	// MSD Device attached flag
+BYTE MSD1Mounted, MSD2Mounted, MSD3Mounted, MSD4Mounted; // MSD Mount flag
+BYTE deviceAddress;
+BYTE volume;
+FRESULT res;
+void BTINIT(void);
+void GetBTCommand(const char choice);
+UINT32 GetMenuChoice(void);
+void SendDataBuffer(const char *buffer, UINT32 size);
 
 #define USB_MAX_DEVICES 5
+#define MAX_ALLOWED_CURRENT	(500)
 
 int main(void)
 {
     
     FATFS fatfs[_VOLUMES];
-    
+    /**
     #if defined(__PIC32MX__)
         {
             int  value;
@@ -149,8 +159,22 @@ int main(void)
 			DBINIT();
 
     #endif
+	****/
 
+	BTINIT();
+	DBINIT();
+
+	// Initialize variables
     HubAttached = FALSE;
+	MSD1Attached = 0;
+	MSD2Attached = 0;
+	MSD3Attached = 0;
+	MSD4Attached = 0;
+	MSDAttached = 0;
+	MSD1Mounted = 0;
+	MSD2Mounted = 0;
+	MSD3Mounted = 0;
+	MSD4Mounted = 0;
     
     //Initialize the stack
     USBInitialize(0);
@@ -162,82 +186,97 @@ int main(void)
         // PPS - Configure U2TX - put on pin 50 (RP17)
         RPOR8bits.RP17R = 5;
 
-        UART2Init();
+//        UART2Init();
     #endif
+	mJTAGPortEnable(1);
 
     while(1) {
         
         DBPRINTF("USB FILE TRANSFER HUB\n\n\n");
-        
-        for (DeviceNumber = 0; DeviceNumber<=USB_MAX_DEVICES; DeviceNumber++) {
-        
+
+		DeviceNumber = 0;
+
         //USB stack process function
         USBTasks(DeviceNumber);
-
-        //if hub is plugged in
-        if(USBHostHubDeviceDetect(deviceAddress)) {
-            HubAttached = TRUE;
-            event = EVENT_HUB_ATTACH;
-            DBPRINTF("Hub Device Attached\n\nAddress:\t%x", deviceAddress);
-            DBPRINTF("\nStatus:\t%x", HubStatus);
-                //Just sit here until the device is removed.
-                while(HubAttached == TRUE) {
-                    USBHostHubTasks();
-                }
-            }        
-
+            
         //if no hub and msd devices are plugged in
-        while (!USBHostHubDeviceDetect(deviceAddress) || !USBHostMSDSCSIMediaDetect(DeviceNumber)) {
+        while (!USBHostHubDeviceDetect(1)) {
+		//	DBPRINTF("deviceAddress = %x\n", deviceAddress);
             USBTasks(DeviceNumber);
         } 
-                
-        //if msd device is plugged in
-        if (DeviceNumber == 2 || DeviceNumber == 3 || DeviceNumber == 4 || DeviceNumber == 5) {
-            
-        f_mount(DeviceNumber, &fatfs[DeviceNumber]);
-        
-        FRESULT res;
-        FILINFO fno;
-        DIR dir;
-        char *fn;
-        char filename[] = "text.txt";
-        
-    #if _USE_LFN
-    static char lfn[_MAX_LFN * (_DF1S ? 2 : 1) + 1];
-    fno.lfname = lfn;
-    fno.lfsize = sizeof(lfn);
-    #endif
 
-        FIL fp;
-        res = f_open(&fp,filename, FA_CREATE_ALWAYS | FA_WRITE);
-        res = f_puts("Hello World!\n\n", &fp);
-        res = f_opendir(&dir, "");
-        
-        if(res = FR_OK) {
-            for(;;) {
-                res = f_readdir(&dir, &fno);
-                if (res != FR_OK || fno.fname[0] == 0) break;
-                if (fno.fname[0] == '.') continue;
-#if _USE_LFN
-            fn = *fno.lfname ? fno.lfname : fno.fname;
-#else
-            fn = fno.fname;
-#endif 
-            if (fno.fattrib & AM_DIR) {
-                res = f_puts("\nDIR ", &fp);
-            }
-            else {
-                res = f_puts("\nFIL ", &fp);
-            }
-            res = f_puts(fn, &fp);
-            }
-        }
-        res = f_close(&fp);
-        }
-        }
-    }
+        //if hub is plugged in
+        if(USBHostHubDeviceDetect(1)) {
+            HubAttached = TRUE;
+            event = EVENT_HUB_ATTACH;
+            DBPRINTF("Hub Device Attached\n");
+                //Just sit here until the device is removed.
+                while(HubAttached == TRUE) {
+                    USBTasks(DeviceNumber);
+					if (MSDAttached) {
+					for (DeviceNumber = 1; DeviceNumber < USB_MAX_DEVICES; DeviceNumber ++) {					
+						driveNumber = DeviceNumber - 1;
+						volume = CurrentPort - 1;
+
+						if (DeviceNumber == 1) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD1Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x\n", CurrentPort);
+						res = f_mount(volume, &fatfs[volume]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", volume);
+							} // if res
+						MSD1Mounted = 1;
+						MSD1Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 1
+
+						else if (DeviceNumber == 2) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD2Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x\n", CurrentPort);
+						res = f_mount(volume, &fatfs[volume]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", volume);
+							} // if res
+						MSD2Mounted = 1;
+						MSD2Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 2
+
+						else if (DeviceNumber == 3) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD3Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x Address %x\n", driveNumber, CurrentPort);
+						res = f_mount(volume, &fatfs[volume]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", volume);
+							} // if res
+						MSD3Mounted = 1;
+						MSD3Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 3
+
+						else if (DeviceNumber == 4) {
+						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD4Mounted == 0) {
+						DBPRINTF("MSD Device Attached in Port %x Address %x\n", driveNumber, CurrentPort);
+						res = f_mount(volume, &fatfs[volume]);
+							if (res == FR_OK) {
+								DBPRINTF("%x: MSD Device Mounted\n", volume);
+							} // if res
+						MSD4Mounted = 1;
+						MSD4Attached = 1;
+						} // if usbhostmsdscsi
+						} // if devicenumber 4
+
+					} // for DeviceNumber
+					DeviceNumber = 0;
+					}
+			
+				//GetBTCommand();
+	
+				} // while HubAttached
+        } // while USBHostHubDeviceDetect 
     return 0;
-}
+} // while (1)
+} // main
 
 
 /****************************************************************************
@@ -284,6 +323,14 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
             // The data pointer points to a byte that represents the amount of power
             // requested in mA, divided by two.  If the device wants too much power,
             // we reject it.
+			if (((USB_VBUS_POWER_EVENT_DATA*)data)->current <= (MAX_ALLOWED_CURRENT / 2))
+            {
+                return TRUE;
+            }
+            else
+            {
+                DBPRINTF( "\n***** USB Error - device requires too much current *****\n" );
+            }
             return TRUE;
 
         case EVENT_VBUS_RELEASE_POWER:
@@ -298,6 +345,61 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
             HubAttached = TRUE;
             return TRUE;
             break;
+
+		case EVENT_ATTACH:
+			// USB device is attached
+			DBPRINTF("MSD Device at %x\n", CurrentPort);
+			MSDAttached = 1;
+			return TRUE;
+			break;
+
+		case EVENT_DETACH:
+			// USB device is detached
+			DBPRINTF("MSD Device at %x Detached\n", CurrentPort);
+			volume = CurrentPort - 1;
+			switch (CurrentPort){
+				case 1:
+					MSD1Attached = 0;
+					res = f_mount(volume, NULL);
+					if (res == FR_OK) {
+						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						MSD1Mounted = 0;
+					}
+					break;
+
+				case 2:
+					MSD2Attached = 0;
+					res = f_mount(volume, NULL);
+					if (res == FR_OK) {
+						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						MSD2Mounted = 0;
+					}
+					break;
+
+				case 3:
+					MSD3Attached = 0;
+					res = f_mount(volume, NULL);
+					if (res == FR_OK) {
+						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						MSD3Mounted = 0;
+					}				
+					break;
+
+				case 4:
+					MSD4Attached = 0;
+					res = f_mount(volume, NULL);
+					if (res == FR_OK) {
+						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						MSD4Mounted = 0;
+					}
+					break;
+
+				default:
+					break;					
+
+			}
+			return TRUE;
+			break;
 
         case EVENT_UNSUPPORTED_DEVICE:
             return TRUE;
@@ -328,4 +430,159 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
     }
 
     return FALSE;
+}
+
+static unsigned int _excep_code; 
+static unsigned int _excep_addr; 
+// this function overrides the normal _weak_ generic handler 
+void _general_exception_handler(void) 
+{ 
+ unsigned int mod_addr; 
+ asm volatile("mfc0 %0,$13" : "=r" (_excep_code)); 
+ asm volatile("mfc0 %0,$14" : "=r" (_excep_addr)); 
+ // Skip instruction causing the exception 
+ _excep_code = (_excep_code & 0x0000007C) >> 2; 
+ mod_addr = _excep_addr + 4; 
+ asm volatile("mtc0 %0,$14" :: "r" (mod_addr)); 
+}
+
+void BTINIT (void) {
+	#if defined (__32MX220F032D__) || defined (__32MX250F128D__)
+    PPSInput(2,U2RX,RPB5); // Assign RPB5 as input pin for U2RX
+    PPSOutput(4,RPB0,U2TX); // Set RPB0 pin as output for U2TX
+    #elif defined (__32MX430F064L__) || (__32MX450F256L__) || (__32MX470F512L__)
+    PPSInput(2,U1RX,RPF4); // Assign RPF4 as input pin for U1RX
+    PPSOutput(2,RPF5,U1TX); // Set RPF5 pin as output for U1TX
+    #endif
+
+    // Configure the device for maximum performance but do not change the PBDIV
+    // Given the options, this function will change the flash wait states, RAM
+    // wait state and enable prefetch cache but will not change the PBDIV.
+    // The PBDIV value is already set via the pragma FPBDIV option above.
+    SYSTEMConfig(SYS_FREQ, SYS_CFG_WAIT_STATES | SYS_CFG_PCACHE);
+
+    // Explorer-16 LEDs are on lower 8-bits of PORTA and to use all LEDs, JTAG port must be disabled.
+    //mJTAGPortEnable(DEBUG_JTAGPORT_OFF);
+
+    mPORTDClearBits(BIT_0); 		// Turn off RA7 on startup.
+    mPORTDSetPinsDigitalOut(BIT_0);	// Make RA7 as output.
+
+    // Configure UART module, set buad rate, turn on UART, etc.
+    UARTConfigure(UART_MODULE_ID, UART_ENABLE_PINS_TX_RX_ONLY);
+    UARTSetFifoMode(UART_MODULE_ID, UART_INTERRUPT_ON_TX_NOT_FULL | UART_INTERRUPT_ON_RX_NOT_EMPTY);
+    UARTSetLineControl(UART_MODULE_ID, UART_DATA_SIZE_8_BITS | UART_PARITY_NONE | UART_STOP_BITS_1);
+    UARTSetDataRate(UART_MODULE_ID, GetPeripheralClock(), DESIRED_BAUDRATE);
+    UARTEnable(UART_MODULE_ID, UART_ENABLE_FLAGS(UART_PERIPHERAL | UART_RX | UART_TX));
+
+    // Configure UART RX Interrupt
+    INTEnable(INT_SOURCE_UART_RX(UART_MODULE_ID), INT_ENABLED);
+    INTSetVectorPriority(INT_VECTOR_UART(UART_MODULE_ID), INT_PRIORITY_LEVEL_2);
+    INTSetVectorSubPriority(INT_VECTOR_UART(UART_MODULE_ID), INT_SUB_PRIORITY_LEVEL_0);
+
+    // Enable multi-vector interrupts
+    INTConfigureSystem(INT_SYSTEM_CONFIG_MULT_VECTOR);
+    INTEnableInterrupts();
+
+}
+
+void GetBTCommand(const char choice) {
+
+	switch(choice) {
+		case 1:
+			if (MSD1Attached) {
+				SendDataBuffer("MSD 1 Attached\n", strlen("MSD 1 Attached\n"));
+            }
+			else {
+				SendDataBuffer("MSD 1 Not Attached\n", strlen("MSD 1 Not Attached\n"));
+			}
+			break;
+
+		case 2:
+			if (MSD2Attached) {
+				SendDataBuffer("MSD 2 Attached\n", strlen("MSD 2 Attached\n"));
+			}
+			else {
+				SendDataBuffer("MSD 2 Not Attached\n", strlen("MSD 2 Not Attached\n"));
+			}
+			break;
+
+		case 3:
+			if (MSD3Attached) {
+				SendDataBuffer("MSD 3 Attached\n", strlen("MSD 3 Attached\n"));
+			}
+			else {
+				SendDataBuffer("MSD 3 Not Attached\n", strlen("MSD 3 Not Attached"));
+			}
+			break;
+
+		case 4:
+			if (MSD4Attached) {
+				SendDataBuffer("MSD 4 Attached\n", strlen("MSD 4 Attached\n"));
+			}
+			else {
+				SendDataBuffer("MSD 4 Not Attached\n", strlen("MSD 4 Not Attached\n"));
+			}
+			break;
+
+		default:
+			break;
+
+	}
+
+}
+
+UINT32 GetMenuChoice(void)
+{
+    UINT8  menu_item;
+	menu_item = 0;
+
+    if(UARTReceivedDataIsAvailable(UART_MODULE_ID)) {
+
+    menu_item = UARTGetDataByte(UART_MODULE_ID);
+
+    menu_item -= '0';
+	}
+    return (UINT32)menu_item;
+}
+
+// *****************************************************************************
+// void UARTTxBuffer(char *buffer, UINT32 size)
+// *****************************************************************************
+void SendDataBuffer(const char *buffer, UINT32 size)
+{
+    while(size)
+    {
+        while(!UARTTransmitterIsReady(UART_MODULE_ID))
+            ;
+
+        UARTSendDataByte(UART_MODULE_ID, *buffer);
+
+        buffer++;
+        size--;
+    }
+
+    while(!UARTTransmissionHasCompleted(UART_MODULE_ID))
+        ;
+}
+
+// UART 2 interrupt handler, set at priority level 2
+void __ISR(_UART2_VECTOR, ipl2) IntUart2Handler(void)
+{
+	// Is this an RX interrupt?
+	if(INTGetFlag(INT_SOURCE_UART_RX(UART_MODULE_ID)))
+	{
+            // Clear the RX interrupt Flag
+	    INTClearFlag(INT_SOURCE_UART_RX(UART_MODULE_ID));
+
+            // Echo what we just received.
+            GetBTCommand(UARTGetDataByte(UART_MODULE_ID));
+
+            
+	}
+
+	// We don't care about TX interrupt
+	if ( INTGetFlag(INT_SOURCE_UART_TX(UART_MODULE_ID)) )
+	{
+            INTClearFlag(INT_SOURCE_UART_TX(UART_MODULE_ID));
+	}
 }
