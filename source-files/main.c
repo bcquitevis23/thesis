@@ -123,7 +123,7 @@ BYTE HubStatus;
 BYTE driveNumber;
 BYTE MSDAttached, MSD1Attached, MSD2Attached, MSD3Attached, MSD4Attached;	// MSD Device attached flag
 BYTE MSD1Mounted, MSD2Mounted, MSD3Mounted, MSD4Mounted; // MSD Mount flag
-BYTE deviceAddress;
+BYTE deviceAddress[_VOLUMES];
 BYTE volume;
 FRESULT res;
 void BTINIT(void);
@@ -136,7 +136,7 @@ void SendDataBuffer(const char *buffer, UINT32 size);
 
 int main(void)
 {
-    
+    int i;
     FATFS fatfs[_VOLUMES];
     /**
     #if defined(__PIC32MX__)
@@ -195,14 +195,17 @@ int main(void)
         DBPRINTF("USB FILE TRANSFER HUB\n\n\n");
 
 		DeviceNumber = 0;
+		for (i=0; i<_VOLUMES;i++) {
+			deviceAddress[i] = 0;
+		}
 
         //USB stack process function
-        USBTasks(DeviceNumber);
+        USBTasks(0);
             
         //if no hub and msd devices are plugged in
         while (!USBHostHubDeviceDetect(1)) {
 		//	DBPRINTF("deviceAddress = %x\n", deviceAddress);
-            USBTasks(DeviceNumber);
+            USBTasks(0);
         } 
 
         //if hub is plugged in
@@ -212,13 +215,15 @@ int main(void)
             DBPRINTF("Hub Device Attached\n");
                 //Just sit here until the device is removed.
                 while(HubAttached == TRUE) {
-                    USBTasks(DeviceNumber);
+                    USBTasks(0);
 					if (MSDAttached) {
-					for (DeviceNumber = 1; DeviceNumber < USB_MAX_DEVICES; DeviceNumber ++) {					
-						driveNumber = DeviceNumber - 1;
+					for (i = 0; i < _VOLUMES; i++) {					
+						driveNumber = i;
 						volume = CurrentPort - 1;
 
-						if (DeviceNumber == 1) {
+						if ((deviceAddress[i] != 0) && (i == volume)) {
+						
+						if (i == 0) {
 						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD1Mounted == 0) {
 						DBPRINTF("MSD Device Attached in Port %x\n", CurrentPort);
 						res = f_mount(volume, &fatfs[volume]);
@@ -226,11 +231,10 @@ int main(void)
 								DBPRINTF("%x: MSD Device Mounted\n", volume);
 							} // if res
 						MSD1Mounted = 1;
-						MSD1Attached = 1;
 						} // if usbhostmsdscsi
-						} // if devicenumber 1
+						} // if i == 0
 
-						else if (DeviceNumber == 2) {
+						else if (i == 1) {
 						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD2Mounted == 0) {
 						DBPRINTF("MSD Device Attached in Port %x\n", CurrentPort);
 						res = f_mount(volume, &fatfs[volume]);
@@ -238,11 +242,10 @@ int main(void)
 								DBPRINTF("%x: MSD Device Mounted\n", volume);
 							} // if res
 						MSD2Mounted = 1;
-						MSD2Attached = 1;
 						} // if usbhostmsdscsi
-						} // if devicenumber 2
+						} // if i == 1
 
-						else if (DeviceNumber == 3) {
+						else if (i == 2) {
 						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD3Mounted == 0) {
 						DBPRINTF("MSD Device Attached in Port %x Address %x\n", driveNumber, CurrentPort);
 						res = f_mount(volume, &fatfs[volume]);
@@ -250,11 +253,10 @@ int main(void)
 								DBPRINTF("%x: MSD Device Mounted\n", volume);
 							} // if res
 						MSD3Mounted = 1;
-						MSD3Attached = 1;
 						} // if usbhostmsdscsi
-						} // if devicenumber 3
+						} // if i == 2
 
-						else if (DeviceNumber == 4) {
+						else if (i == 3)
 						if(USBHostMSDSCSIMediaDetect(driveNumber) && MSD4Mounted == 0) {
 						DBPRINTF("MSD Device Attached in Port %x Address %x\n", driveNumber, CurrentPort);
 						res = f_mount(volume, &fatfs[volume]);
@@ -262,16 +264,12 @@ int main(void)
 								DBPRINTF("%x: MSD Device Mounted\n", volume);
 							} // if res
 						MSD4Mounted = 1;
-						MSD4Attached = 1;
 						} // if usbhostmsdscsi
-						} // if devicenumber 4
-
-					} // for DeviceNumber
-					DeviceNumber = 0;
-					}
-			
-				//GetBTCommand();
-	
+						} // if i == 3
+				
+					} // for i
+					i = 0;
+					} // if msdattached
 				} // while HubAttached
         } // while USBHostHubDeviceDetect 
     return 0;
@@ -347,9 +345,32 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
             break;
 
 		case EVENT_ATTACH:
-			// USB device is attached
-			DBPRINTF("MSD Device at %x\n", CurrentPort);
-			MSDAttached = 1;
+			// USB device is detached
+			DBPRINTF("MSD Device at %x Attached\n", CurrentPort);
+			switch (CurrentPort){
+				case 1:
+					MSD1Attached = 1;
+					break;
+
+				case 2:
+					MSD2Attached = 1;
+					break;
+
+				case 3:
+					MSD3Attached = 1;
+					break;
+
+				case 4:
+					MSD4Attached = 1;
+					break;
+
+				default:
+					break;					
+
+			}
+
+				deviceAddress[CurrentPort] = CurrentPort + 1;
+				MSDAttached = 1;
 			return TRUE;
 			break;
 
@@ -362,7 +383,7 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
 					MSD1Attached = 0;
 					res = f_mount(volume, NULL);
 					if (res == FR_OK) {
-						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						DBPRINTF("%x: MSD Device Unmounted\n", volume);
 						MSD1Mounted = 0;
 					}
 					break;
@@ -371,7 +392,7 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
 					MSD2Attached = 0;
 					res = f_mount(volume, NULL);
 					if (res == FR_OK) {
-						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						DBPRINTF("%x: MSD Device Unmounted\n", volume);
 						MSD2Mounted = 0;
 					}
 					break;
@@ -380,7 +401,7 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
 					MSD3Attached = 0;
 					res = f_mount(volume, NULL);
 					if (res == FR_OK) {
-						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						DBPRINTF("%x: MSD Device Unmounted\n", volume);
 						MSD3Mounted = 0;
 					}				
 					break;
@@ -389,7 +410,7 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
 					MSD4Attached = 0;
 					res = f_mount(volume, NULL);
 					if (res == FR_OK) {
-						DBPRINTF("%x: MSD Device Mounted\n", volume);
+						DBPRINTF("%x: MSD Device Unmounted\n", volume);
 						MSD4Mounted = 0;
 					}
 					break;
@@ -398,6 +419,13 @@ BOOL USB_ApplicationEventHandler( BYTE address, USB_EVENT event, void *data, DWO
 					break;					
 
 			}
+
+				deviceAddress[CurrentPort] = 0;
+
+			if ((MSD1Attached == 0) && (MSD2Attached == 0) && (MSD3Attached == 0) && (MSD4Attached == 0)) {
+				MSDAttached = 0;
+			}
+
 			return TRUE;
 			break;
 
